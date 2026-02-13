@@ -1,1 +1,7 @@
-# MDS-Data-551-Project
+# Dashboard Description
+
+This application is an interactive tool designed to analyze the Supertore Orders dataset and guide retail promotion strategy. The interface helps a business user to understand how discounts, product selection, and first-time purchase behaviour. The interface is designed to guide users from high-level business diagnosis to detailed exploratory analysis.
+
+The top section functions as an executive decision panel. It contains visualizations that summeraize profitability dirivers across all orders. A Sales vs Profit density heatmap shows where transactions cluster and highlights regions of frequent losses. Next to it, a Discount vs Margin guardrail chart aggregates orders into discount ranges and plots average profit margin, allowing users to identify discount levels where profitability collapses. Below, a first-purchase product chart identifies which product sub-categories most commonly appear in customers’ first orders and displays their margins to evaluate whether acquisition products are profitable. A basket-size versus profit plot then evaluates how the size of a customer’s first order relates to profitability and whether encouraging larger baskets reduces risk.
+
+All charts are linked: selecting a category, product, or region filters the other panels so users can move from global patterns to targeted decisions.
