@@ -1,7 +1,16 @@
 # Dashboard Description
 
-This application is an interactive tool designed to analyze the Supertore Orders dataset and guide retail promotion strategy. The interface helps a business user to understand how discounts, product selection, and first-time purchase behaviour. The interface is designed to guide users from high-level business diagnosis to detailed exploratory analysis.
+This application is an interactive decision-supported dashboard designed for retail marketing managers planning promotional campaigns. The interface guides users from business performance metrics to customer growth tactics. 
 
-The top section functions as an executive decision panel. It contains visualizations that summeraize profitability dirivers across all orders. A Sales vs Profit density heatmap shows where transactions cluster and highlights regions of frequent losses. Next to it, a Discount vs Margin guardrail chart aggregates orders into discount ranges and plots average profit margin, allowing users to identify discount levels where profitability collapses. Below, a first-purchase product chart identifies which product sub-categories most commonly appear in customers’ first orders and displays their margins to evaluate whether acquisition products are profitable. A basket-size versus profit plot then evaluates how the size of a customer’s first order relates to profitability and whether encouraging larger baskets reduces risk.
+At the top of the dashboard, an Executive Overview panel summarizes the overall performance. Line charts display the total sales total profits and the average profit margin over time. A category comparison chart highlights differences between revenue-driving and profit-driving product groups. A discount-versus-margin plot establishes pricing guardrails by showing how increasing discounts impact profitability.
 
-All charts are linked: selecting a category, product, or region filters the other panels so users can move from global patterns to targeted decisions.
+The Hero Product Discovery panel focuses on customer acquisition. This panel will show "hero products" which are the most purchased product which frequently appear in customers' first purchase. Selecting one of these hero products will update companion visuals to display other products frequently bought with it. This will allow marketing managers to make decisions that could potentially attach new customers by creating bundles.
+
+The New Customer Intelligence section is used to identify which new customers are likely to be profitable. By comparing discount usage, basket size and margins, marketing managers can distinguish high-potential customers from discount-driven ones.
+
+In the Campaign Simulation panel allows users to test potential marketing strategies. By selecting the hero product along with other frequently purchased items, and selecting a discount cap, the dashboard estimates the expected impact on sales and profit margin. This helps evaluate trade-offs and design promotions that attract customers while maintaining profitability. 
+
+
+![Dashboard Mockup](images/dashboard_mockup.jpg)
+
+**Design Note:** The dashboard mockup shown below was generated using generative AI to illustrate the intended user experience and layout. The final implemented dashboard may differ in appearance and functionality as development progresses.
