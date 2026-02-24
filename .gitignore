@@ -1,1 +1,7 @@
 **/.DS_Store
+
+visuals.ipynb
+
+__pycache__/
+*.pyc
+
