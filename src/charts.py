@@ -118,7 +118,7 @@ def profit_trend(df, year="ALL", month="ALL", width=260, height=120):
         alt.Chart(g_time).mark_line(point=True)
         .encode(
             x=x_encoding,
-            y=alt.Y("total_profit:Q", axis=alt.Axis(grid=False), scale=alt.Scale(zero=False)),
+            y=alt.Y("total_profit:Q", title="Total Profit", axis=alt.Axis(grid=False), scale=alt.Scale(zero=False)),
             tooltip=[x_tooltip, alt.Tooltip("total_profit:Q", title="Total Profit")]
         )
         .properties(width=width, height=height, title="Total Profit")
@@ -144,8 +144,8 @@ def margin_trend(df, year="ALL", month="ALL", width=260, height=120):
         .mark_line(point=True)
         .encode(
             x=x_encoding,
-            y=alt.Y("margin:Q", axis=alt.Axis(format="%", grid=False), scale=alt.Scale(zero=False)),
-            tooltip=[x_tooltip, alt.Tooltip("margin:Q", format=".2%", title="Avg Profit Margin")]
+            y=alt.Y("margin:Q", title="Average Profit Margin", axis=alt.Axis(format="%", grid=False), scale=alt.Scale(zero=False)),
+            tooltip=[x_tooltip, alt.Tooltip("margin:Q", format=".2%", title="Average Profit Margin")]
         )
         .properties(width=width, height=height, title="Avg Profit Margin"
         )
@@ -157,8 +157,8 @@ def catagory_sales(df, width=260, height=120):
         alt.Chart(g_cat)
         .mark_bar()
         .encode(
-            y=alt.Y("category:N", sort="-x", axis=alt.Axis(grid=False)),
-            x=alt.X("sales:Q", axis=alt.Axis(grid=False)),
+            y=alt.Y("category:N", title="Category", sort="-x", axis=alt.Axis(grid=False)),
+            x=alt.X("sales:Q", title="Total Sales", axis=alt.Axis(grid=False)),
             color="category:N",
             tooltip=["sales","profit"]
         )
@@ -170,9 +170,9 @@ def discount_margin(df, width=420, height=130):
         alt.Chart(df)
         .mark_line(point=True)
         .encode(
-            x=alt.X("discount:Q", bin=alt.Bin(maxbins=10), title="Discount Bin", axis=alt.Axis(format=".0%", grid=False)),
-            y=alt.Y("margin:Q", aggregate="mean", title="Mean Margin", axis=alt.Axis(format=".0%", grid=False)),
-            tooltip=[alt.Tooltip("mean(margin):Q", title="Mean Margin", format=".2%")],
+            x=alt.X("discount:Q", bin=alt.Bin(maxbins=10), title="Discount", axis=alt.Axis(format=".0%", grid=False)),
+            y=alt.Y("margin:Q", aggregate="mean", title="Average Profit Margin", axis=alt.Axis(format=".0%", grid=False)),
+            tooltip=[alt.Tooltip("mean(margin):Q", title="Average Profit Margin", format=".2%")],
         )
         .properties(width=width, height=height, title="Discount vs Margin (Binned Mean)")
     )
@@ -225,7 +225,7 @@ def hero_profitability(df, width=260, height=120):
             y=alt.Y(
                 "product_name:N",
                 sort="-x",
-                title=None,
+                title="Product",
                 axis=alt.Axis(labelLimit=140, grid=False),
             ),
             color=alt.Color(
@@ -261,13 +261,13 @@ def hero_profitability(df, width=260, height=120):
         .encode(
             x=alt.X(
                 "co_count:Q",
-                title="Co-purchases",
+                title="Co-Purchases",
                 axis=alt.Axis(values=list(range(0, max_count + 1)), grid=False)
             ),
             y=alt.Y(
                 "product_ranked:N",
                 sort="-x",
-                title=None,
+                title="Co-Product Rank",
                 axis=alt.Axis(labelLimit=140, grid=False),
             ),
             color=alt.Color(
