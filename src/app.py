@@ -48,6 +48,7 @@ def format_compact_currency(value):
 
 # Initialize the app
 app = Dash(__name__)
+server = app.server
 
 year_options = (
     [{"label": "All Years", "value": "ALL"}] +
