@@ -1,7 +1,9 @@
 import pandas as pd
+from pathlib import Path
 
 
-df_raw = pd.read_csv("data/SuperStoreOrders.csv")
+DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "raw" / "SuperStoreOrders.csv"
+df_raw = pd.read_csv(DATA_FILE)
 df = df_raw.copy()
 df["sales"] = (
     df["sales"]
@@ -19,5 +21,4 @@ df["shipping_delay"] = (df["ship_date"] - df["order_date"]).dt.days
 df["year"] = df["order_date"].dt.year.astype("Int64")
 df["month_num"] = df["order_date"].dt.month.astype("Int64")
 df["month_name"] = df["order_date"].dt.month_name()
-
 
