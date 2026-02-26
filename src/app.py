@@ -21,6 +21,31 @@ def apply_filters(df_in, year, month, country):
         d = d[d["country"] == country]
     return d
 
+
+def format_compact_currency(value):
+    if value is None or value != value:
+        return "$0"
+
+    sign = "-" if value < 0 else ""
+    n = abs(float(value))
+
+    if n >= 1_000_000_000:
+        scaled, suffix = n / 1_000_000_000, "B"
+    elif n >= 1_000_000:
+        scaled, suffix = n / 1_000_000, "M"
+    elif n >= 1_000:
+        scaled, suffix = n / 1_000, "K"
+    else:
+        return f"{sign}${n:,.0f}"
+
+    if scaled >= 100:
+        scaled_txt = f"{scaled:.0f}"
+    else:
+        scaled_txt = f"{scaled:.1f}".rstrip("0").rstrip(".")
+
+    return f"{sign}${scaled_txt}{suffix}"
+
+
 # Initialize the app
 app = Dash(__name__)
 
@@ -386,10 +411,10 @@ def update_all_charts(year, month, country):
 
 
     return (
-        f"${total_revenue:,.0f}",
-        f"${total_profit:,.0f}",
-        f"${avg_order:,.0f}",
-        f"${hero_profit:,.0f}",
+        format_compact_currency(total_revenue),
+        format_compact_currency(total_profit),
+        format_compact_currency(avg_order),
+        format_compact_currency(hero_profit),
         f"{attach_rate:.1%}",
         f"{avg_coproducts:.2f}",
         hero_combo.to_html(),
