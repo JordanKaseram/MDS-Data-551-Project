@@ -44,7 +44,15 @@ country_options = [{"label": r, "value": r} for r in sorted(df["country"].dropna
 
 app.layout = html.Div(
     [
-        html.H1("Retail Dashboard"),
+        html.H1(
+            "Retail Dashboard",
+            style={
+                "margin": "0 0 14px 0",
+                "color": "#0f172a",
+                "fontSize": "38px",
+                "letterSpacing": "-0.02em",
+            },
+        ),
         # Stores filter state so multiple callbacks can share it
         dcc.Store(id="filters-store", data={"year": "ALL", "month": "ALL", "country": "ALL"}),
 
@@ -93,124 +101,164 @@ app.layout = html.Div(
                         style={"display": "flex", "alignItems": "center", "gap": "8px"},
                 )
             ],
-                style={"display": "flex", "alignItems": "center", "gap": "32px"}
+                style={
+                    "display": "flex",
+                    "alignItems": "center",
+                    "gap": "32px",
+                    "padding": "12px 14px",
+                    "background": "rgba(226, 232, 240, 0.62)",
+                    "border": "1px solid rgba(148, 163, 184, 0.34)",
+                    "borderRadius": "14px",
+                    "boxShadow": "0 8px 22px rgba(15, 23, 42, 0.06)",
+                    "backdropFilter": "blur(6px)",
+                }
         ),
 
-
-        # The KPI statistics 
+        # Section 1 and Section 2 on the same row
         html.Div(
             [
-            # KPI 1
+                # Section 1 for plots
                 html.Div(
                     [
-                        html.Div("Total Revenue", style={"color": "#6b7280", "fontSize": "14px"}),
-                        html.Div(id="kpi-revenue", style={"fontSize": "36px", "fontWeight": "700"}),
-                    ],
-                    style={
-                        "padding": "12px",
-                        "border": "1px solid #eef0f4",
-                        "borderRadius": "12px",
-                        "background": "white",
-                        "width": "260px",
-                        },
-                    ),
-
-            # KPI 2
-                html.Div(
-                    [
-                        html.Div("Total Profit", style={"color": "#6b7280", "fontSize": "14px"}),
-                        html.Div(id="kpi-profit", style={"fontSize": "36px", "fontWeight": "700"}),
-                    ],
-                    style={
-                        "padding": "12px",
-                        "border": "1px solid #eef0f4",
-                        "borderRadius": "12px",
-                        "background": "white",
-                        "width": "260px",
-                        },
-                    ),
-            # KPI 3
-                html.Div(
-                    [
-                        html.Div("Average Backet Spend", style={"color": "#6b7280", "fontSize": "14px"}),
-                        html.Div(id="kpi-avg_order", style={"fontSize": "36px", "fontWeight": "700"}),
-                    ],
-                    style={
-                        "padding": "12px",
-                        "border": "1px solid #eef0f4",
-                        "borderRadius": "12px",
-                        "background": "white",
-                        "width": "260px",
-                        },
-                ),
-            ],
-            style={
-                "display": "flex",
-                "gap": "16px",
-                "marginTop": "16px",
-            },
-        ),
-        
-        
-        # Section 1 for plots
-        html.Div(
-            [
-                html.H2("Section 1: Trends & Breakdown", style={"margin": "0 0 12px 0"}),
-
-                # Top row: 3 charts (total sales, total profit & avg margin)
-                html.Div(
-                    [
+                        html.H2("Section 1: Trends & Breakdown", style={"margin": "0 0 12px 0"}),
+                        html.Div(
+                            [
+                                html.Div(
+                                    [
+                                        html.Div("Total Revenue", style={"color": "#475569", "fontSize": "13px"}),
+                                        html.Div(id="kpi-revenue", style={"fontSize": "28px", "fontWeight": "700"}),
+                                    ],
+                                    style={
+                                        "padding": "10px",
+                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                        "borderRadius": "10px",
+                                        "background": "rgba(241, 245, 249, 0.92)",
+                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
+                                    },
+                                ),
+                                html.Div(
+                                    [
+                                        html.Div("Total Profit", style={"color": "#475569", "fontSize": "13px"}),
+                                        html.Div(id="kpi-profit", style={"fontSize": "28px", "fontWeight": "700"}),
+                                    ],
+                                    style={
+                                        "padding": "10px",
+                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                        "borderRadius": "10px",
+                                        "background": "rgba(241, 245, 249, 0.92)",
+                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
+                                    },
+                                ),
+                                html.Div(
+                                    [
+                                        html.Div("Average Backet Spend", style={"color": "#475569", "fontSize": "13px"}),
+                                        html.Div(id="kpi-avg_order", style={"fontSize": "28px", "fontWeight": "700"}),
+                                    ],
+                                    style={
+                                        "padding": "10px",
+                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                        "borderRadius": "10px",
+                                        "background": "rgba(241, 245, 249, 0.92)",
+                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
+                                    },
+                                ),
+                            ],
+                            style={
+                                "display": "grid",
+                                "gridTemplateColumns": "repeat(3, minmax(0, 1fr))",
+                                "gap": "10px",
+                                "marginBottom": "12px",
+                            },
+                        ),
                         html.Iframe(
                             id="trend-charts-frame",
-                            style={"border": "0", "width": "100%", "height": "320px"},
+                            style={"border": "0", "width": "100%", "height": "620px", "overflow": "hidden"},
                         ),
                     ],
                     style={
-                        "marginBottom": "16px",
+                        "padding": "16px",
+                        "border": "1px solid rgba(59, 130, 246, 0.18)",
+                        "borderRadius": "14px",
+                        "marginTop": "16px",
+                        "background": "linear-gradient(180deg, rgba(239, 246, 255, 0.92) 0%, rgba(248, 250, 252, 0.96) 100%)",
+                        "boxShadow": "0 10px 30px rgba(30, 64, 175, 0.08)",
+                        "flex": "8",
                     },
                 ),
-                # Bottom row: 2 charts (cat sales and discount vs margin)
+                # Section 2 for plots
                 html.Div(
                     [
+                        html.H2("Section 2: Hero Profitability", style={"margin": "0 0 12px 0"}),
+                        html.Div(
+                            [
+                                html.Div(
+                                    [
+                                        html.Div("Hero Profit", style={"color": "#475569", "fontSize": "13px"}),
+                                        html.Div(id="hero-kpi-profit", style={"fontSize": "24px", "fontWeight": "700"}),
+                                    ],
+                                    style={
+                                        "padding": "10px",
+                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                        "borderRadius": "10px",
+                                        "background": "rgba(241, 245, 249, 0.92)",
+                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
+                                    },
+                                ),
+                                html.Div(
+                                    [
+                                        html.Div("Attach Rate", style={"color": "#475569", "fontSize": "13px"}),
+                                        html.Div(id="hero-kpi-attach-rate", style={"fontSize": "24px", "fontWeight": "700"}),
+                                    ],
+                                    style={
+                                        "padding": "10px",
+                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                        "borderRadius": "10px",
+                                        "background": "rgba(241, 245, 249, 0.92)",
+                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
+                                    },
+                                ),
+                                html.Div(
+                                    [
+                                        html.Div("Avg Co-products", style={"color": "#475569", "fontSize": "13px"}),
+                                        html.Div(id="hero-kpi-avg-coproducts", style={"fontSize": "24px", "fontWeight": "700"}),
+                                    ],
+                                    style={
+                                        "padding": "10px",
+                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                        "borderRadius": "10px",
+                                        "background": "rgba(241, 245, 249, 0.92)",
+                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
+                                    },
+                                ),
+                            ],
+                            style={
+                                "display": "grid",
+                                "gridTemplateColumns": "repeat(3, minmax(0, 1fr))",
+                                "gap": "10px",
+                                "marginBottom": "12px",
+                            },
+                        ),
                         html.Iframe(
-                            id="trend-brkdwn-frame",
-                            style={"border": "0", "width": "100%", "height": "320px"},
+                            id="hero-profit-frame",
+                            style={
+                                "border": "0",
+                                "width": "100%",
+                                "height": "600px",
+                            },
                         ),
                     ],
-                ),
-            ],
-            style={
-                "padding": "16px",
-                "border": "1px solid #e5e7eb",
-                "borderRadius": "10px",
-                "marginTop": "16px",
-                "background": "white",
-            },
-        ),
-
-       
-        # Section 2 for plots
-        html.Div(
-            [
-                html.H2("Section 2: Hero Profitability", style={"margin": "0 0 12px 0"}),
-
-                # bar chart with the most profitable items
-                html.Iframe(
-                    id="hero-profit-frame",
                     style={
-                        "border": "0",
-                        "width": "100%",
-                        "height": "320px",
+                        "padding": "16px",
+                        "border": "1px solid rgba(16, 185, 129, 0.18)",
+                        "borderRadius": "14px",
+                        "marginTop": "16px",
+                        "background": "linear-gradient(180deg, rgba(236, 253, 245, 0.9) 0%, rgba(248, 250, 252, 0.96) 100%)",
+                        "boxShadow": "0 10px 30px rgba(5, 150, 105, 0.08)",
+                        "flex": "12",
                     },
                 ),
             ],
-            style={
-                "padding": "16px",
-                "border": "1px solid #e5e7eb",
-                "borderRadius": "10px",
-                "marginTop": "16px",
-                "background": "white",
-            },
+            style={"display": "flex", "gap": "16px", "alignItems": "flex-start"},
         ),
 
         # Section 3: To be changed with the actual plots. Current plots are placeholders
@@ -245,29 +293,43 @@ app.layout = html.Div(
             ],
             style={
                 "padding": "16px",
-                "border": "1px solid #e5e7eb",
-                "borderRadius": "10px",
+                "border": "1px solid rgba(99, 102, 241, 0.2)",
+                "borderRadius": "14px",
                 "marginTop": "16px",
-                "background": "white",
+                "background": "linear-gradient(180deg, rgba(238, 242, 255, 0.88) 0%, rgba(248, 250, 252, 0.96) 100%)",
+                "boxShadow": "0 10px 30px rgba(79, 70, 229, 0.08)",
             },
         ),
 
     ],
+    style={
+        "minHeight": "100vh",
+        "padding": "20px 24px 28px",
+        "background": "radial-gradient(circle at 0% 0%, #f8fbff 0%, #eef3ff 42%, #f6f9fc 100%)",
+        "fontFamily": "ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        "color": "#0f172a",
+    },
 )
 
 
 
 # updates the charts with the year/month/country filter
 @app.callback(
+    # KPIs 
     Output("kpi-revenue", "children"),
     Output("kpi-profit", "children"),
     Output("kpi-avg_order", "children"),
+    Output("hero-kpi-profit", "children"),
+    Output("hero-kpi-attach-rate", "children"),
+    Output("hero-kpi-avg-coproducts", "children"),
+
+    # Charts
     Output("hero-profit-frame", "srcDoc"),
     Output("trend-charts-frame", "srcDoc"),
-    Output("trend-brkdwn-frame", "srcDoc"),
     Output("sales-trend-frame", "srcDoc"),
     Output("profit-trend-frame", "srcDoc"),
 
+    # top dashbar widget
     Input("year-dropdown", "value"),
     Input("month-dropdown", "value"),
     Input("country-dropdown", "value"),
@@ -276,6 +338,7 @@ app.layout = html.Div(
 
 def update_all_charts(year, month, country):
     d = apply_filters(df, year, month, country)
+    
     # KPI
     total_revenue = d["sales"].sum()
     total_profit = d["profit"].sum()
@@ -283,26 +346,54 @@ def update_all_charts(year, month, country):
     if d.empty:
         avg_order = 0
 
+    # section 2 hero KPIs
+    hero_summary = (
+        d.groupby("product_name", as_index=False)
+        .agg(total_profit=("profit", "sum"))
+        .sort_values("total_profit", ascending=False)
+        .head(10)
+    )
+    top_products = set(hero_summary["product_name"].tolist())
+    hero_profit = hero_summary["total_profit"].sum()
+
+    hero_orders = set(d[d["product_name"].isin(top_products)]["order_id"].dropna().unique())
+    if hero_orders:
+        hero_order_products = (
+            d[d["order_id"].isin(hero_orders)]
+            .groupby("order_id")["product_name"]
+            .nunique()
+        )
+        attach_rate = (hero_order_products > 1).mean()
+        avg_coproducts = (hero_order_products - 1).clip(lower=0).mean()
+    else:
+        attach_rate = 0
+        avg_coproducts = 0
+
 
     # section 1 plots
-    s_trend = ch.sales_trend(d)
-    p_trend = ch.profit_trend(d)
-    m_trend = ch.margin_trend(d)
-    c_sales = ch.catagory_sales(d)
-    d_margin = ch.discount_margin(d)
-    trend_charts = s_trend | p_trend | m_trend
-    trend_brkdwn = c_sales | d_margin
+    s_trend = ch.sales_trend(d, year=year, month=month)
+    p_trend = ch.profit_trend(d, year=year, month=month)
+    d_margin = ch.discount_margin(d, width=420, height=120)
+    section1_grid = (
+        (ch.sales_trend(d, year=year, month=month, width=200, height=115) | ch.profit_trend(d, year=year, month=month, width=200, height=115))
+        & (ch.margin_trend(d, year=year, month=month, width=200, height=115) | ch.catagory_sales(d, width=200, height=115))
+        & d_margin
+    )
 
     # section 2 plots
-    h_profit = ch.hero_profitability(d, width=320, height=220)
+    h_profit, co_chart = ch.hero_profitability(d, width=560, height=170)
+    hero_combo = alt.vconcat(h_profit, co_chart, spacing=8)
+
 
     return (
         f"${total_revenue:,.0f}",
         f"${total_profit:,.0f}",
         f"${avg_order:,.0f}",
-        h_profit.to_html(),
-        trend_charts.to_html(),
-        trend_brkdwn.to_html(),
+        f"${hero_profit:,.0f}",
+        f"{attach_rate:.1%}",
+        f"{avg_coproducts:.2f}",
+        hero_combo.to_html(),
+        section1_grid.to_html(embed_options={"actions": False}),
         s_trend.to_html(),
         p_trend.to_html(),
     )
