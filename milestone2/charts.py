@@ -64,7 +64,7 @@ def margin_trend(df, width=260, height=120):
         )
     )
 
-def catagory_sales(df):
+def catagory_sales(df, idth=260, height=120):
     g_cat = group_category(df)
     return (
         alt.Chart(g_cat)
@@ -78,7 +78,7 @@ def catagory_sales(df):
         .properties(width=260, height=150, title="Category Sales")
     )
 
-def discount_margin(df):
+def discount_margin(df, width=260, height=120):
     return(
         alt.Chart(df).mark_line(point=True).encode(
         x=alt.X("discount:Q", bin=alt.Bin(maxbins=10), axis=alt.Axis(format=".0%")),
@@ -89,7 +89,7 @@ def discount_margin(df):
 
 
 # Section 2 visuals
-def hero_profitability(df, width=500, height=350):
+def hero_profitability(df, width=260, height=120):
     alt.data_transformers.disable_max_rows()
 
     hero = (
@@ -143,12 +143,13 @@ def hero_profitability(df, width=500, height=350):
             opacity=alt.condition(sel, alt.value(1), alt.value(0.35)),
         )
         .add_params(sel)
-        .properties(width=500, height=350, title="Top 10 Products by Profitability")
+        .properties(width=width, height=height, title="Top 10 Products by Profitability")
     )
+    max_count = int(co_top["co_count"].max())
 
     co_chart = (
         alt.Chart(co_top)
-        .transform_filter(sel)  # <-- this links the charts
+        .transform_filter(sel)
         .transform_window(
             row_number="row_number()",
             sort=[alt.SortField("co_count", order="descending")]
@@ -156,27 +157,17 @@ def hero_profitability(df, width=500, height=350):
         .transform_filter(alt.datum.row_number <= 5)
         .mark_bar()
         .encode(
-            x=alt.X("co_count:Q", title="Times Bought Together",
-                    axis=alt.Axis(format="d", tickMinStep=1)),
+            x=alt.X(
+                "co_count:Q",
+                title="Times Bought Together",
+                axis=alt.Axis(values=list(range(0, max_count + 1)))
+            ),
             y=alt.Y("product_name_co:N", sort="-x", title="Frequently Bought With"),
             color=alt.Color("category_co:N", title="Co-product category"),
-            tooltip=[
-                "product_name_co:N",
-                alt.Tooltip("co_count:Q", title="Co-purchases")
-            ],
+            tooltip=["product_name_co:N", alt.Tooltip("co_count:Q", title="Co-purchases")],
         )
-        .properties(width=500, height=350, title="Frequently Bought With (Top 5)")
+        .properties(width=width, height=height, title="Frequently Bought With (Top 5)")
     )
 
     return (hero_chart | co_chart)
 
-
-
-
-
-if __name__ == "__main__":
-    # Local quick test: run `python charts.py` from milestone2/
-    from data import df
-
-    sales_trend(df).save("sales_trend_test.html")
-    print("Saved sales_trend_test.html and region_bar_test.html (open them in your browser).")
