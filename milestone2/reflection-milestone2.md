@@ -4,12 +4,22 @@
 ---
 
 ## 1. Implementation Progress
-We have successfully established the **core framework** of the dashboard. The current version provides a high-level descriptive analysis of the business through three primary visualizations:
-* **Total Sales Trend (2011-2014):** A longitudinal view of revenue growth over a four-year period.
-* **Category-wise Sales Distribution:** A breakdown of sales performance across different business sectors (Technology, Furniture, and Office Supplies).
-* **Top 10 Products by Profitability:** A focused bar chart identifying the individual items contributing most to the bottom line.
 
-The underlying **data pipeline** and **layout structure** are fully functional, providing a stable base for the integration of future interactive features.
+We have successfully established the **core framework** of the dashboard. The current version provides a high-level descriptive analysis of the business through three specialized functional sections:
+
+* **Section 1: Trend and Breakdown**
+    * **Core Visuals:** A longitudinal view of **Total Sales Trends (2011-2014)** combined with a **Category-wise Sales Distribution**.
+    * **Representation:** This section tracks revenue growth over a four-year period and breaks down performance across Technology, Furniture, and Office Supplies to identify key growth drivers.
+
+* **Section 2: Product Performance**
+    * **Core Visuals:** A focused analysis of the **Top 10 Products by Profitability**.
+    * **Representation:** This identifies high-value items contributing most to the bottom line, allowing stakeholders to distinguish between high-volume sales and actual profit generators.
+
+* **Section 3: Basket and Pricing Intelligence**
+    * **Core Visuals:** Initial correlation analysis between **Discount Levels, Profit Margins, and Order Quantity**.
+    * **Representation:** This section explores the relationship between pricing strategies and business health, providing a foundation for understanding how price elasticity and "basket" characteristics impact overall performance.
+
+The underlying **data pipeline** and **layout structure** are fully functional, providing a stable base for the integration of future interactive features across these three domains.
 
 ---
 
