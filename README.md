@@ -92,3 +92,5 @@ project/
 
 ## Preview
 ![Dashboard Mockup](images/dashboard_mockup.jpg)
+
+**Design Note:** The dashboard mockup shown below was generated using generative AI to illustrate the intended user experience and layout. The final implemented dashboard may differ in appearance and functionality as development progresses.
