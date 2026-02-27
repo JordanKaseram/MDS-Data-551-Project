@@ -1,5 +1,6 @@
 # Import packages
 from dash import Dash, html, dcc, Input, Output
+import pandas as pd
 from data import df
 
 import charts as ch
@@ -44,6 +45,52 @@ def format_compact_currency(value):
         scaled_txt = f"{scaled:.1f}".rstrip("0").rstrip(".")
 
     return f"{sign}${scaled_txt}{suffix}"
+
+
+def build_bundle_table(df_in: pd.DataFrame) -> pd.DataFrame:
+    required = {"order_id", "sub_category"}
+    if not required.issubset(df_in.columns):
+        return pd.DataFrame(columns=["sub_cat1", "sub_cat2", "support", "confidence", "lift"])
+
+    orders = df_in[["order_id", "sub_category"]].dropna().drop_duplicates()
+    total_orders = orders["order_id"].nunique()
+    if total_orders == 0:
+        return pd.DataFrame(columns=["sub_cat1", "sub_cat2", "support", "confidence", "lift"])
+
+    subcat_orders = orders.groupby("sub_category")["order_id"].nunique()
+
+    # Directed pair counts (A -> B)
+    left = orders.rename(columns={"sub_category": "sub_cat1"})
+    right = orders.rename(columns={"sub_category": "sub_cat2"})
+    pairs = left.merge(right, on="order_id")
+    pairs = pairs[pairs["sub_cat1"] != pairs["sub_cat2"]]
+
+    pair_counts = (
+        pairs.groupby(["sub_cat1", "sub_cat2"])["order_id"]
+        .nunique()
+        .reset_index(name="pair_orders")
+    )
+    if pair_counts.empty:
+        return pd.DataFrame(columns=["sub_cat1", "sub_cat2", "support", "confidence", "lift"])
+
+    pair_counts["orders_a"] = pair_counts["sub_cat1"].map(subcat_orders)
+    pair_counts["orders_b"] = pair_counts["sub_cat2"].map(subcat_orders)
+
+    support = pair_counts["pair_orders"] / total_orders
+    prob_a = pair_counts["orders_a"] / total_orders
+    prob_b = pair_counts["orders_b"] / total_orders
+
+    pair_counts["support"] = support * 100
+    pair_counts["confidence"] = (pair_counts["pair_orders"] / pair_counts["orders_a"]) * 100
+    pair_counts["lift"] = support / (prob_a * prob_b)
+
+    out = (
+        pair_counts[["sub_cat1", "sub_cat2", "support", "confidence", "lift"]]
+        .replace([float("inf"), float("-inf")], pd.NA)
+        .dropna()
+        .sort_values("lift", ascending=False)
+    )
+    return out
 
 
 # Initialize the app
@@ -132,10 +179,8 @@ app.layout = html.Div(
                     "alignItems": "center",
                     "gap": "32px",
                     "padding": "12px 14px",
-                    "background": "rgba(226, 232, 240, 0.62)",
                     "border": "1px solid rgba(148, 163, 184, 0.34)",
                     "borderRadius": "14px",
-                    "boxShadow": "0 8px 22px rgba(15, 23, 42, 0.06)",
                     "backdropFilter": "blur(6px)",
                 }
         ),
@@ -158,8 +203,6 @@ app.layout = html.Div(
                                         "padding": "10px",
                                         "border": "1px solid rgba(148, 163, 184, 0.34)",
                                         "borderRadius": "10px",
-                                        "background": "rgba(241, 245, 249, 0.92)",
-                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
                                     },
                                 ),
                                 html.Div(
@@ -171,34 +214,19 @@ app.layout = html.Div(
                                         "padding": "10px",
                                         "border": "1px solid rgba(148, 163, 184, 0.34)",
                                         "borderRadius": "10px",
-                                        "background": "rgba(241, 245, 249, 0.92)",
-                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
-                                    },
-                                ),
-                                html.Div(
-                                    [
-                                        html.Div("Average Backet Spend", style={"color": "#475569", "fontSize": "13px"}),
-                                        html.Div(id="kpi-avg_order", style={"fontSize": "28px", "fontWeight": "700"}),
-                                    ],
-                                    style={
-                                        "padding": "10px",
-                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
-                                        "borderRadius": "10px",
-                                        "background": "rgba(241, 245, 249, 0.92)",
-                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
                                     },
                                 ),
                             ],
                             style={
                                 "display": "grid",
-                                "gridTemplateColumns": "repeat(3, minmax(0, 1fr))",
+                                "gridTemplateColumns": "repeat(2, minmax(0, 1fr))",
                                 "gap": "10px",
                                 "marginBottom": "12px",
                             },
                         ),
                         html.Iframe(
                             id="trend-charts-frame",
-                            style={"border": "0", "width": "100%", "height": "620px", "overflow": "hidden"},
+                            style={"border": "0", "width": "100%", "height": "430px", "overflow": "hidden"},
                         ),
                     ],
                     style={
@@ -206,15 +234,13 @@ app.layout = html.Div(
                         "border": "1px solid rgba(59, 130, 246, 0.18)",
                         "borderRadius": "14px",
                         "marginTop": "16px",
-                        "background": "linear-gradient(180deg, rgba(239, 246, 255, 0.92) 0%, rgba(248, 250, 252, 0.96) 100%)",
-                        "boxShadow": "0 10px 30px rgba(30, 64, 175, 0.08)",
                         "flex": "8",
                     },
                 ),
-                # Section 2 for plots
+                # Section 2 for product performance
                 html.Div(
                     [
-                        html.H2("Section 2: Hero Profitability", style={"margin": "0 0 12px 0"}),
+                        html.H2("Section 2: Product Performance", style={"margin": "0 0 12px 0"}),
                         html.Div(
                             [
                                 html.Div(
@@ -226,60 +252,49 @@ app.layout = html.Div(
                                         "padding": "10px",
                                         "border": "1px solid rgba(148, 163, 184, 0.34)",
                                         "borderRadius": "10px",
-                                        "background": "rgba(241, 245, 249, 0.92)",
-                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
-                                    },
-                                ),
-                                html.Div(
-                                    [
-                                        html.Div("Attach Rate", style={"color": "#475569", "fontSize": "13px"}),
-                                        html.Div(id="hero-kpi-attach-rate", style={"fontSize": "24px", "fontWeight": "700"}),
-                                    ],
-                                    style={
-                                        "padding": "10px",
-                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
-                                        "borderRadius": "10px",
-                                        "background": "rgba(241, 245, 249, 0.92)",
-                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
-                                    },
-                                ),
-                                html.Div(
-                                    [
-                                        html.Div("Avg Co-products", style={"color": "#475569", "fontSize": "13px"}),
-                                        html.Div(id="hero-kpi-avg-coproducts", style={"fontSize": "24px", "fontWeight": "700"}),
-                                    ],
-                                    style={
-                                        "padding": "10px",
-                                        "border": "1px solid rgba(148, 163, 184, 0.34)",
-                                        "borderRadius": "10px",
-                                        "background": "rgba(241, 245, 249, 0.92)",
-                                        "boxShadow": "0 1px 4px rgba(15, 23, 42, 0.05)",
                                     },
                                 ),
                             ],
                             style={
                                 "display": "grid",
-                                "gridTemplateColumns": "repeat(3, minmax(0, 1fr))",
+                                "gridTemplateColumns": "repeat(1, minmax(0, 1fr))",
                                 "gap": "10px",
                                 "marginBottom": "12px",
                             },
                         ),
-                        html.Iframe(
-                            id="hero-profit-frame",
+                        html.Div(
+                            [
+                                html.Iframe(
+                                    id="hero-profit-frame",
+                                    style={
+                                        "border": "0",
+                                        "width": "100%",
+                                        "height": "265px",
+                                        "overflow": "hidden",
+                                    },
+                                ),
+                                html.Iframe(
+                                    id="product-performance-frame",
+                                    style={
+                                        "border": "0",
+                                        "width": "100%",
+                                        "height": "265px",
+                                        "overflow": "hidden",
+                                    },
+                                ),
+                            ],
                             style={
-                                "border": "0",
-                                "width": "100%",
-                                "height": "600px",
+                                "display": "grid",
+                                "gridTemplateColumns": "1fr",
+                                "gap": "10px",
                             },
                         ),
                     ],
                     style={
                         "padding": "16px",
-                        "border": "1px solid rgba(16, 185, 129, 0.18)",
+                        "border": "1px solid rgba(148, 163, 184, 0.28)",
                         "borderRadius": "14px",
                         "marginTop": "16px",
-                        "background": "linear-gradient(180deg, rgba(236, 253, 245, 0.9) 0%, rgba(248, 250, 252, 0.96) 100%)",
-                        "boxShadow": "0 10px 30px rgba(5, 150, 105, 0.08)",
                         "flex": "12",
                     },
                 ),
@@ -287,43 +302,115 @@ app.layout = html.Div(
             style={"display": "flex", "gap": "16px", "alignItems": "flex-start"},
         ),
 
-        # Section 3: To be changed with the actual plots. Current plots are placeholders
+        # Section 3
         html.Div(
             [
-                html.H2("Section 3: Detailed Trends", style={"margin": "0 0 12px 0"}),
+                html.H2("Section 3: Basket & Pricing Intelligence", style={"margin": "0 0 12px 0"}),
                 html.Div(
                     [
-                        html.Iframe(
-                            id="sales-trend-frame",
+                        html.Div(
+                            [
+                                html.Div("Average Basket Spend", style={"color": "#475569", "fontSize": "13px"}),
+                                html.Div(id="kpi-avg_order", style={"fontSize": "24px", "fontWeight": "700"}),
+                            ],
                             style={
-                                "border": "0",
-                                "width": "100%",
-                                "height": "450px",
+                                "padding": "10px",
+                                "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                "borderRadius": "10px",
                             },
                         ),
-                        html.Iframe(
-                            id="profit-trend-frame",
+                        html.Div(
+                            [
+                                html.Div("Attach Rate", style={"color": "#475569", "fontSize": "13px"}),
+                                html.Div(id="section3-kpi-attach-rate", style={"fontSize": "24px", "fontWeight": "700"}),
+                            ],
                             style={
-                                "border": "0",
-                                "width": "100%",
-                                "height": "450px",
+                                "padding": "10px",
+                                "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                "borderRadius": "10px",
+                            },
+                        ),
+                        html.Div(
+                            [
+                                html.Div("Avg Co-products", style={"color": "#475569", "fontSize": "13px"}),
+                                html.Div(id="section3-kpi-avg-coproducts", style={"fontSize": "24px", "fontWeight": "700"}),
+                            ],
+                            style={
+                                "padding": "10px",
+                                "border": "1px solid rgba(148, 163, 184, 0.34)",
+                                "borderRadius": "10px",
                             },
                         ),
                     ],
                     style={
                         "display": "grid",
-                        "gridTemplateColumns": "1fr 1fr",
+                        "gridTemplateColumns": "repeat(3, minmax(0, 1fr))",
+                        "gap": "10px",
+                        "marginBottom": "12px",
+                    },
+                ),
+                html.Div(
+                    [
+                        html.Iframe(
+                            id="section3-bubble-frame",
+                            style={
+                                "border": "0",
+                                "width": "100%",
+                                "height": "300px",
+                                "overflow": "hidden",
+                            },
+                        ),
+                        html.Iframe(
+                            id="co-purchase-frame",
+                            style={
+                                "border": "0",
+                                "width": "100%",
+                                "height": "300px",
+                                "overflow": "hidden",
+                            },
+                        ),
+                    ],
+                    style={
+                        "display": "grid",
+                        "gridTemplateColumns": "minmax(0, 3fr) minmax(0, 2fr)",
                         "gap": "16px",
+                        "marginTop": "8px",
+                    },
+                ),
+                html.Div(
+                    [
+                        html.Iframe(
+                            id="bundle-table-frame",
+                            style={
+                                "border": "0",
+                                "width": "100%",
+                                "height": "300px",
+                                "overflow": "hidden",
+                            },
+                        ),
+                        html.Iframe(
+                            id="discount-guardrail-frame",
+                            style={
+                                "border": "0",
+                                "width": "100%",
+                                "height": "300px",
+                                "overflow": "hidden",
+                            },
+                        ),
+                    ],
+                    style={
+                        "display": "grid",
+                        "gridTemplateColumns": "minmax(0, 3fr) minmax(0, 2fr)",
+                        "gap": "16px",
+                        "marginTop": "8px",
                     },
                 ),
             ],
             style={
                 "padding": "16px",
-                "border": "1px solid rgba(99, 102, 241, 0.2)",
+                "border": "1px solid rgba(148, 163, 184, 0.28)",
                 "borderRadius": "14px",
                 "marginTop": "16px",
-                "background": "linear-gradient(180deg, rgba(238, 242, 255, 0.88) 0%, rgba(248, 250, 252, 0.96) 100%)",
-                "boxShadow": "0 10px 30px rgba(79, 70, 229, 0.08)",
             },
         ),
 
@@ -331,7 +418,6 @@ app.layout = html.Div(
     style={
         "minHeight": "100vh",
         "padding": "20px 24px 28px",
-        "background": "radial-gradient(circle at 0% 0%, #f8fbff 0%, #eef3ff 42%, #f6f9fc 100%)",
         "fontFamily": "ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         "color": "#0f172a",
     },
@@ -346,14 +432,17 @@ app.layout = html.Div(
     Output("kpi-profit", "children"),
     Output("kpi-avg_order", "children"),
     Output("hero-kpi-profit", "children"),
-    Output("hero-kpi-attach-rate", "children"),
-    Output("hero-kpi-avg-coproducts", "children"),
+    Output("section3-kpi-attach-rate", "children"),
+    Output("section3-kpi-avg-coproducts", "children"),
 
     # Charts
     Output("hero-profit-frame", "srcDoc"),
+    Output("product-performance-frame", "srcDoc"),
     Output("trend-charts-frame", "srcDoc"),
-    Output("sales-trend-frame", "srcDoc"),
-    Output("profit-trend-frame", "srcDoc"),
+    Output("section3-bubble-frame", "srcDoc"),
+    Output("co-purchase-frame", "srcDoc"),
+    Output("bundle-table-frame", "srcDoc"),
+    Output("discount-guardrail-frame", "srcDoc"),
 
     # top dashbar widget
     Input("year-dropdown", "value"),
@@ -396,19 +485,19 @@ def update_all_charts(year, month, country):
         avg_coproducts = 0
 
 
-    # section 1 plots
-    s_trend = ch.sales_trend(d, year=year, month=month)
-    p_trend = ch.profit_trend(d, year=year, month=month)
-    d_margin = ch.discount_margin(d, width=420, height=120)
-    section1_grid = (
-        (ch.sales_trend(d, year=year, month=month, width=200, height=115) | ch.profit_trend(d, year=year, month=month, width=200, height=115))
-        & (ch.margin_trend(d, year=year, month=month, width=200, height=115) | ch.catagory_sales(d, width=200, height=115))
-        & d_margin
-    )
+    # section 1 plots with category interaction
+    section1_grid = ch.section1_interactive(d, year=year, month=month, width=200, height=115)
 
-    # section 2 plots
-    h_profit, co_chart = ch.hero_profitability(d, width=560, height=170)
-    hero_combo = alt.vconcat(h_profit, co_chart, spacing=8)
+    # section 2 plots (product performance only)
+    hero_chart = ch.hero_profitability(d, width=500, height=240)
+    product_perf_chart = ch.top_products_panel(d, top_n=5, label_width=220, metric_width=95, panel_height=200)
+
+    # section 3 plots (basket & pricing intelligence only)
+    section3_bubble = ch.subcat_bubble(d, width=620, height=260)
+    section3_co_purchase = ch.co_purchase_chart(d, top_n=8, width=420, height=260)
+    mba_table_df = build_bundle_table(d)
+    section3_bundle = ch.bundle_table_chart(mba_table_df, top_n=10)
+    section3_guardrail = ch.discount_guardrail(d, top_n=12, width=460, height=260)
 
 
     return (
@@ -418,10 +507,13 @@ def update_all_charts(year, month, country):
         format_compact_currency(hero_profit),
         f"{attach_rate:.1%}",
         f"{avg_coproducts:.2f}",
-        hero_combo.to_html(),
+        hero_chart.to_html(embed_options={"actions": False}),
+        product_perf_chart.to_html(embed_options={"actions": False}),
         section1_grid.to_html(embed_options={"actions": False}),
-        s_trend.to_html(),
-        p_trend.to_html(),
+        section3_bubble.to_html(embed_options={"actions": False}),
+        section3_co_purchase.to_html(embed_options={"actions": False}),
+        section3_bundle.to_html(embed_options={"actions": False}),
+        section3_guardrail.to_html(embed_options={"actions": False}),
     )
 
 # Run the app

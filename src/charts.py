@@ -1,4 +1,6 @@
 import altair as alt
+import numpy as np
+import pandas as pd
 
 # Section 1 visuals
 MONTH_ORDER = [
@@ -144,10 +146,10 @@ def margin_trend(df, year="ALL", month="ALL", width=260, height=120):
         .mark_line(point=True)
         .encode(
             x=x_encoding,
-            y=alt.Y("margin:Q", title="Average Profit Margin", axis=alt.Axis(format="%", grid=False), scale=alt.Scale(zero=False)),
-            tooltip=[x_tooltip, alt.Tooltip("margin:Q", format=".2%", title="Average Profit Margin")]
+            y=alt.Y("margin:Q", title="Average Profit Margin (%)", axis=alt.Axis(format="%", grid=False), scale=alt.Scale(zero=False)),
+            tooltip=[x_tooltip, alt.Tooltip("margin:Q", format=".2%", title="Average Profit Margin (%)")]
         )
-        .properties(width=width, height=height, title="Avg Profit Margin"
+        .properties(width=width, height=height, title="Average Profit Margin"
         )
     )
 
@@ -170,114 +172,559 @@ def discount_margin(df, width=420, height=130):
         alt.Chart(df)
         .mark_line(point=True)
         .encode(
-            x=alt.X("discount:Q", bin=alt.Bin(maxbins=10), title="Discount", axis=alt.Axis(format=".0%", grid=False)),
-            y=alt.Y("margin:Q", aggregate="mean", title="Average Profit Margin", axis=alt.Axis(format=".0%", grid=False)),
-            tooltip=[alt.Tooltip("mean(margin):Q", title="Average Profit Margin", format=".2%")],
+            x=alt.X("discount:Q", bin=alt.Bin(maxbins=10), title="Discount (%)", axis=alt.Axis(format=".0%", grid=False)),
+            y=alt.Y("margin:Q", aggregate="mean", title="Average Profit Margin (%)", axis=alt.Axis(format=".0%", grid=False)),
+            tooltip=[alt.Tooltip("mean(margin):Q", title="Average Profit Margin (%)", format=".2%")],
         )
-        .properties(width=width, height=height, title="Discount vs Margin (Binned Mean)")
+        .properties(width=width, height=height, title="Discount vs Average Profit Margin")
     )
 
-# Section 2 visuals
+
+def section1_interactive(df, year="ALL", month="ALL", width=200, height=115):
+    d = df.copy()
+    if month != "ALL":
+        d = d.dropna(subset=["order_date"]).copy()
+        d["time_key"] = d["order_date"].dt.day
+        x_title = "Day"
+        x_axis = alt.Axis(tickMinStep=1, format="d", grid=False)
+        x_tooltip = alt.Tooltip("time_key:Q", title="Day")
+    elif year != "ALL":
+        d = d.dropna(subset=["month_num"]).copy()
+        d["time_key"] = d["month_num"].astype(int)
+        x_title = "Month"
+        x_axis = alt.Axis(values=MONTH_TICK_VALUES, labelExpr=MONTH_LABEL_EXPR, grid=False)
+        x_tooltip = alt.Tooltip("time_key:Q", title="Month")
+    else:
+        d = d.dropna(subset=["year"]).copy()
+        d["time_key"] = d["year"].astype(int)
+        x_title = "Year"
+        x_axis = alt.Axis(tickMinStep=1, format="d", grid=False)
+        x_tooltip = alt.Tooltip("time_key:Q", title="Year")
+
+    sel = alt.selection_point(fields=["category"], empty=True)
+    x_enc = alt.X("time_key:Q", title=x_title, axis=x_axis)
+
+    sales_chart = (
+        alt.Chart(d)
+        .transform_filter(sel)
+        .transform_aggregate(total_sales="sum(sales)", groupby=["time_key"])
+        .mark_line(point=True)
+        .encode(
+            x=x_enc,
+            y=alt.Y("total_sales:Q", title="Total Sales", axis=alt.Axis(format="~s", grid=False), scale=alt.Scale(zero=False)),
+            tooltip=[x_tooltip, alt.Tooltip("total_sales:Q", title="Total Sales", format=",.0f")],
+        )
+        .properties(width=width, height=height, title="Total Sales")
+    )
+
+    profit_chart = (
+        alt.Chart(d)
+        .transform_filter(sel)
+        .transform_aggregate(total_profit="sum(profit)", groupby=["time_key"])
+        .mark_line(point=True)
+        .encode(
+            x=x_enc,
+            y=alt.Y("total_profit:Q", title="Total Profit", axis=alt.Axis(format="~s", grid=False), scale=alt.Scale(zero=False)),
+            tooltip=[x_tooltip, alt.Tooltip("total_profit:Q", title="Total Profit", format=",.0f")],
+        )
+        .properties(width=width, height=height, title="Total Profit")
+    )
+
+    margin_chart = (
+        alt.Chart(d)
+        .transform_filter(sel)
+        .transform_aggregate(
+            total_profit="sum(profit)",
+            total_sales="sum(sales)",
+            groupby=["time_key"],
+        )
+        .transform_calculate(margin="datum.total_sales == 0 ? null : datum.total_profit / datum.total_sales")
+        .mark_line(point=True)
+        .encode(
+            x=x_enc,
+            y=alt.Y(
+                "margin:Q",
+                title="Average Profit Margin (%)",
+                axis=alt.Axis(format="%", grid=False),
+                scale=alt.Scale(zero=False),
+            ),
+            tooltip=[x_tooltip, alt.Tooltip("margin:Q", title="Average Profit Margin (%)", format=".2%")],
+        )
+        .properties(width=width, height=height, title="Average Profit Margin")
+    )
+
+    category_chart = (
+        alt.Chart(d)
+        .transform_aggregate(sales="sum(sales)", profit="sum(profit)", groupby=["category"])
+        .mark_bar()
+        .encode(
+            y=alt.Y("category:N", title="Category", sort="-x", axis=alt.Axis(grid=False)),
+            x=alt.X("sales:Q", title="Total Sales", axis=alt.Axis(format="~s", grid=False)),
+            color=alt.condition(sel, "category:N", alt.value("#cbd5e1")),
+            tooltip=[
+                alt.Tooltip("category:N", title="Category"),
+                alt.Tooltip("sales:Q", title="Total Sales", format=",.0f"),
+                alt.Tooltip("profit:Q", title="Total Profit", format=",.0f"),
+            ],
+        )
+        .add_params(sel)
+        .properties(
+            width=width,
+            height=height,
+            title=alt.TitleParams(
+                text="Category Sales",
+                subtitle=["Click a category to filter the other 3 charts"],
+                anchor="start",
+            ),
+        )
+    )
+
+    return _apply_chart_theme((sales_chart | profit_chart) & (margin_chart | category_chart))
+
+
+# Section 2 visuals (Product Performance)
 def hero_profitability(df, width=260, height=120):
     alt.data_transformers.disable_max_rows()
 
     hero = (
         df.groupby(["product_name", "category"], as_index=False)
-        .agg(
-            total_profit=("profit", "sum"),
-            avg_margin=("margin", "mean")
-        )
+        .agg(total_profit=("profit", "sum"), total_sales=("sales", "sum"), avg_margin=("margin", "mean"))
         .sort_values("total_profit", ascending=False)
         .head(10)
     )
 
-    top_products = hero["product_name"].tolist()
+    if hero.empty:
+        return (
+            alt.Chart(pd.DataFrame({"message": ["No product-performance data for current filters"]}))
+            .mark_text(color="#64748b", fontSize=12)
+            .encode(text="message:N")
+            .properties(width=width, height=height, title="Top 10 Products by Profit")
+        )
 
-    left = df[["order_id", "product_name"]].drop_duplicates()
-    right = df[["order_id", "product_name"]].drop_duplicates()
-
-    pairs = left.merge(right, on="order_id", suffixes=("", "_co"))
-    pairs = pairs[pairs["product_name"] != pairs["product_name_co"]]
-
-    co_counts = (
-        pairs.groupby(["product_name", "product_name_co"], as_index=False)
-            .size()
-            .rename(columns={"size": "co_count"})
-    )
-
-    # Keep only pairs where the "left" product is one of the top 10 hero products
-    co_top = co_counts[co_counts["product_name"].isin(top_products)]
-
-    product_cat = df[["product_name", "category"]].drop_duplicates()
-    co_top = co_top.merge(
-        product_cat.rename(columns={"product_name": "product_name_co", "category": "category_co"}),
-        on="product_name_co",
-        how="left"
-    )
-
-    sel = alt.selection_point(fields=["product_name"], empty=False)  # click a bar
-
-    hero_chart = (
+    return (
         alt.Chart(hero)
+        .transform_calculate(
+            product_short=(
+                "length(datum.product_name) > 32 ? "
+                "substring(datum.product_name, 0, 32) + '...' : datum.product_name"
+            )
+        )
         .mark_bar()
         .encode(
-            x=alt.X("total_profit:Q", title="Total Profit", axis=alt.Axis(grid=False)),
-            y=alt.Y(
-                "product_name:N",
-                sort="-x",
-                title="Product",
-                axis=alt.Axis(labelLimit=140, grid=False),
-            ),
+            x=alt.X("total_profit:Q", title="Total Profit", axis=alt.Axis(format="~s", grid=False)),
+            y=alt.Y("product_short:N", sort="-x", title="Product Name", axis=alt.Axis(labelLimit=220, grid=False)),
             color=alt.Color(
                 "category:N",
                 title="Category",
                 legend=alt.Legend(orient="right", labelLimit=120, titleLimit=120),
             ),
             tooltip=[
-                "product_name:N",
-                alt.Tooltip("total_profit:Q", format=",.0f"),
-                alt.Tooltip("avg_margin:Q", format=".2%")
+                alt.Tooltip("product_name:N", title="Product"),
+                alt.Tooltip("total_profit:Q", title="Total Profit", format=",.0f"),
+                alt.Tooltip("total_sales:Q", title="Total Sales", format=",.0f"),
+                alt.Tooltip("avg_margin:Q", title="Average Profit Margin", format=".2%"),
             ],
-            opacity=alt.condition(sel, alt.value(1), alt.value(0.35)),
         )
-        .add_params(sel)
-        .properties(width=width, height=height, title="Top 10 by Profit")
+        .properties(width=width, height=height, title="Top 10 Products by Profit")
     )
-    max_count = int(co_top["co_count"].max()) if not co_top.empty else 1
 
-    co_chart = (
-        alt.Chart(co_top)
-        .transform_filter(sel)
-        .transform_window(
-            row_number="row_number()",
-            sort=[alt.SortField("co_count", order="descending")]
+
+# Section 3 visuals (Basket & Pricing Intelligence)
+def co_purchase_chart(df, top_n=8, width=520, height=220):
+    required = {"order_id", "product_name", "category"}
+    if not required.issubset(df.columns):
+        return (
+            alt.Chart(pd.DataFrame({"message": ["Co-purchase data unavailable"]}))
+            .mark_text(color="#64748b", fontSize=12)
+            .encode(text="message:N")
+            .properties(width=width, height=height, title="Top Co-Purchases")
         )
-        .transform_filter(alt.datum.row_number <= 5)
+
+    orders = df[["order_id", "product_name", "category"]].dropna().drop_duplicates()
+    left = orders.rename(columns={"product_name": "product_left"})
+    right = orders.rename(columns={"product_name": "product_co", "category": "category_co"})
+
+    pairs = left.merge(right, on="order_id")
+    pairs = pairs[pairs["product_left"] != pairs["product_co"]]
+
+    co_top = (
+        pairs.groupby(["product_co", "category_co"], as_index=False)["order_id"]
+        .nunique()
+        .rename(columns={"order_id": "co_orders"})
+        .sort_values("co_orders", ascending=False)
+        .head(top_n)
+    )
+
+    if co_top.empty:
+        return (
+            alt.Chart(pd.DataFrame({"message": ["No co-purchase data for current filters"]}))
+            .mark_text(color="#64748b", fontSize=12)
+            .encode(text="message:N")
+            .properties(width=width, height=height, title="Top Co-Purchases")
+        )
+
+    return (
+        alt.Chart(co_top)
+        .transform_window(row_number="row_number()", sort=[alt.SortField("co_orders", order="descending")])
         .transform_calculate(
-            product_short="length(datum.product_name_co) > 24 ? substring(datum.product_name_co, 0, 24) + '...' : datum.product_name_co",
+            product_short=(
+                "length(datum.product_co) > 28 ? "
+                "substring(datum.product_co, 0, 28) + '...' : datum.product_co"
+            ),
             product_ranked="datum.row_number + '. ' + datum.product_short",
         )
         .mark_bar()
         .encode(
-            x=alt.X(
-                "co_count:Q",
-                title="Co-Purchases",
-                axis=alt.Axis(values=list(range(0, max_count + 1)), grid=False)
-            ),
+            x=alt.X("co_orders:Q", title="Co-Purchase Orders", axis=alt.Axis(tickMinStep=1, grid=False)),
             y=alt.Y(
                 "product_ranked:N",
                 sort="-x",
                 title="Co-Product Rank",
-                axis=alt.Axis(labelLimit=140, grid=False),
+                axis=alt.Axis(labelLimit=220, grid=False),
             ),
-            color=alt.Color(
-                "category_co:N",
-                title=None,
-                legend=None,
-            ),
-            tooltip=["product_name_co:N", alt.Tooltip("co_count:Q", title="Co-purchases")],
+            color=alt.Color("category_co:N", title="Category"),
+            tooltip=[
+                alt.Tooltip("product_co:N", title="Product"),
+                alt.Tooltip("co_orders:Q", title="Co-Purchase Orders"),
+            ],
         )
-        .properties(width=width, height=height, title="Top 5 Co-purchases")
+        .properties(width=width, height=height, title="Top Co-Purchases")
     )
 
-    return hero_chart, co_chart
+
+
+# -----------------------------
+# Helpers
+# -----------------------------
+def _safe_div(a, b):
+    return np.where(b != 0, a / b, np.nan)
+
+def _kpi_value(label: str, value: str, width=155):
+    data = pd.DataFrame({"label": [label], "value": [value]})
+
+    v = (
+        alt.Chart(data)
+        .mark_text(align="left", fontSize=18, fontWeight="bold")
+        .encode(text="value:N")
+        .properties(width=width, height=26)
+    )
+
+    l = (
+        alt.Chart(data)
+        .mark_text(align="left", dy=18, fontSize=11, opacity=0.8)
+        .encode(text="label:N")
+        .properties(width=width, height=26)
+    )
+    return v + l
+
+def _apply_chart_theme(chart: alt.Chart | alt.LayerChart | alt.ConcatChart):
+    return (
+        chart.configure_view(strokeOpacity=0)
+        .configure_axis(grid=False)
+        .configure_title(anchor="start")
+    )
+
+# -----------------------------
+# 1) KPI strip (top bar)
+# -----------------------------
+def _kpi_tile(label, value, width=160, height=60):
+    data = pd.DataFrame({"label": [label], "value": [value]})
+
+    value_layer = (
+        alt.Chart(data)
+        .mark_text(align="left", baseline="top", fontSize=20, fontWeight="bold", color="#0f172a")
+        .encode(text="value:N")
+        .properties(width=width, height=height)
+    )
+
+    label_layer = (
+        alt.Chart(data)
+        .mark_text(align="left", baseline="top", dy=28, fontSize=12, color="#475569")
+        .encode(text="label:N")
+        .properties(width=width, height=height)
+    )
+
+    return value_layer + label_layer
+
+
+def kpi_strip(d):
+    total_sales = d["sales"].sum()
+    total_profit = d["profit"].sum()
+    avg_margin = (total_profit / total_sales * 100) if total_sales != 0 else np.nan
+    avg_discount = d["discount"].mean() * 100 if "discount" in d.columns else np.nan
+
+    # frequency = avg line items per order
+    freq = d.groupby("order_id").size().mean() if "order_id" in d.columns else np.nan
+
+    # avg products per txn = avg unique product_name per order
+    if "product_name" in d.columns and "order_id" in d.columns:
+        avg_prod_txn = d.groupby("order_id")["product_name"].nunique().mean()
+    else:
+        avg_prod_txn = np.nan
+
+    n_customers = d["customer_name"].nunique() if "customer_name" in d.columns else d["order_id"].nunique()
+
+    row = alt.hconcat(
+        _kpi_tile("Total Customers", f"{int(n_customers):,}"),
+        _kpi_tile("Average Profit Margin", f"{avg_margin:.1f}%"),
+        _kpi_tile("Average Discount", f"{avg_discount:.1f}%"),
+        _kpi_tile("Average Frequency", f"{freq:.2f}"),
+        _kpi_tile("Average Products/Txn", f"{avg_prod_txn:.2f}"),
+        spacing=18,
+    ).properties(
+        title="Campaign Optimize Profit Strategy"
+    )
+
+    return _apply_chart_theme(row)
+
+# -----------------------------
+# 2) Subcategory discovery bubble
+# x = frequency (% orders), y = margin %, size = sales, color = category
+# -----------------------------
+def subcat_bubble(df_f: pd.DataFrame, width: int = 640, height: int = 340) -> alt.LayerChart:
+    total_orders = df_f["order_id"].nunique()
+    g = (
+        df_f.groupby(["category", "sub_category"], as_index=False)
+        .agg(orders=("order_id", "nunique"), sales=("sales", "sum"), profit=("profit", "sum"))
+    )
+
+    g["freq_pct"] = _safe_div(g["orders"], total_orders) * 100
+    g["margin_pct"] = _safe_div(g["profit"], g["sales"]) * 100
+    g = g.replace([np.inf, -np.inf], np.nan).dropna(subset=["margin_pct", "freq_pct"])
+
+    x_med = float(g["freq_pct"].median())
+    y_med = float(g["margin_pct"].median())
+
+    points = (
+        alt.Chart(g)
+        .mark_circle(opacity=0.78, stroke="white", strokeWidth=0.6)
+        .encode(
+            x=alt.X("freq_pct:Q", title="Purchase Frequency (% of Orders)"),
+            y=alt.Y("margin_pct:Q", title="Profit Margin (%)"),
+            size=alt.Size("sales:Q", scale=alt.Scale(range=[40, 1200]), title="Sales"),
+            color=alt.Color("category:N", title="Category"),
+            tooltip=[
+                "category:N",
+                "sub_category:N",
+                alt.Tooltip("freq_pct:Q", format=".2f", title="Purchase Frequency (%)"),
+                alt.Tooltip("margin_pct:Q", format=".2f", title="Profit Margin (%)"),
+                alt.Tooltip("sales:Q", format=",.0f", title="Sales"),
+            ],
+        )
+        .properties(width=width, height=height, title="Subcategory Discovery (Frequency vs Profit Margin)")
+    )
+
+    labels = (
+        alt.Chart(g)
+        .mark_text(align="left", dx=7, dy=-7, fontSize=10, color="#334155")
+        .encode(x="freq_pct:Q", y="margin_pct:Q", text="sub_category:N")
+    )
+
+    vline = alt.Chart(pd.DataFrame({"x": [x_med]})).mark_rule(strokeDash=[6, 6], opacity=0.5).encode(x="x:Q")
+    hline = alt.Chart(pd.DataFrame({"y": [y_med]})).mark_rule(strokeDash=[6, 6], opacity=0.5).encode(y="y:Q")
+
+    return _apply_chart_theme(points + labels + vline + hline)
+
+# -----------------------------
+# 3) Product panel (Top 5 products sorted by margin%)
+# label col + 3 bars: margin%, sales, #customers
+# -----------------------------
+def top_products_panel(
+    df_f: pd.DataFrame,
+    top_n: int = 5,
+    label_width: int = 300,
+    metric_width: int = 120,
+    panel_height: int = 220,
+) -> alt.ConcatChart:
+    if "customer_name" in df_f.columns:
+        cust_agg = ("customer_name", "nunique")
+    else:
+        cust_agg = ("order_id", "nunique")
+
+    prod = (
+        df_f.groupby(["sub_category", "product_name"], as_index=False)
+        .agg(sales=("sales", "sum"), profit=("profit", "sum"), customers=cust_agg)
+    )
+    prod["margin_pct"] = _safe_div(prod["profit"], prod["sales"]) * 100
+    prod = prod.replace([np.inf, -np.inf], np.nan).dropna(subset=["margin_pct"])
+
+    top = prod.sort_values("margin_pct", ascending=False).head(top_n).copy()
+    top["label"] = top["sub_category"] + " • " + top["product_name"]
+    top["label_short"] = np.where(
+        top["label"].str.len() > 52,
+        top["label"].str.slice(0, 52) + "...",
+        top["label"],
+    )
+
+    y_shared = alt.Y(
+        "label_short:N",
+        sort=alt.SortField(field="margin_pct", order="descending"),
+        title=None,
+        axis=None,
+    )
+
+    label_col = (
+        alt.Chart(top)
+        .mark_text(align="right", baseline="middle", color="#334155", dx=-4)
+        .encode(
+            y=y_shared,
+            x=alt.value(label_width),
+            text="label_short:N",
+            tooltip=[alt.Tooltip("label:N", title="Product")],
+        )
+        .properties(width=label_width, height=panel_height)
+    )
+
+    m_bar = (
+        alt.Chart(top)
+        .mark_bar(cornerRadiusEnd=3)
+        .encode(
+            y=y_shared,
+            x=alt.X("margin_pct:Q", title="Profit Margin (%)"),
+            tooltip=[
+                alt.Tooltip("label:N", title="Product"),
+                alt.Tooltip("margin_pct:Q", title="Profit Margin (%)", format=".2f"),
+                alt.Tooltip("sales:Q", title="Total Sales", format=",.0f"),
+                alt.Tooltip("customers:Q", title="Customers"),
+            ],
+        )
+        .properties(width=metric_width, height=panel_height, title=alt.TitleParams("Profit Margin (%)", anchor="middle"))
+    )
+
+    s_bar = (
+        alt.Chart(top)
+        .mark_bar(cornerRadiusEnd=3)
+        .encode(
+            y=y_shared,
+            x=alt.X("sales:Q", title="Total Sales"),
+            tooltip=[
+                alt.Tooltip("label:N", title="Product"),
+                alt.Tooltip("sales:Q", title="Total Sales", format=",.0f"),
+            ],
+        )
+        .properties(width=metric_width, height=panel_height, title=alt.TitleParams("Total Sales", anchor="middle"))
+    )
+
+    c_bar = (
+        alt.Chart(top)
+        .mark_bar(cornerRadiusEnd=3)
+        .encode(
+            y=y_shared,
+            x=alt.X("customers:Q", title="Customers"),
+            tooltip=[
+                alt.Tooltip("label:N", title="Product"),
+                alt.Tooltip("customers:Q", title="Customers"),
+            ],
+        )
+        .properties(width=metric_width, height=panel_height, title=alt.TitleParams("Customers", anchor="middle"))
+    )
+
+    panel = (
+        alt.hconcat(label_col, m_bar, s_bar, c_bar, spacing=12)
+        .resolve_scale(y="shared")
+        .properties(title="Top Products (Sorted by Profit Margin)")
+    )
+    return _apply_chart_theme(panel)
+
+# -----------------------------
+# 4) Discount guardrail heatmap (strategy bins)
+# -----------------------------
+def discount_guardrail(df_f: pd.DataFrame, top_n: int = 15, width: int = 820, height: int = 360) -> alt.Chart:
+    d = df_f.copy()
+    d["discount"] = pd.to_numeric(d["discount"], errors="coerce")
+    d = d.dropna(subset=["sub_category", "order_id", "sales", "profit", "discount"])
+
+    bins = [0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.35, 1.00]
+    labels = ["0–5%", "5–10%", "10–15%", "15–20%", "20–25%", "25–35%", ">35%"]
+    d["disc_bin"] = pd.cut(d["discount"], bins=bins, labels=labels, include_lowest=True)
+    d = d.dropna(subset=["disc_bin"])
+
+    disc = (
+        d.groupby(["sub_category", "disc_bin"], observed=True)
+        .agg(sales=("sales", "sum"), profit=("profit", "sum"), orders=("order_id", "nunique"))
+        .reset_index()
+    )
+    disc["margin_pct"] = _safe_div(disc["profit"], disc["sales"]) * 100
+    disc = disc.replace([np.inf, -np.inf], np.nan).dropna(subset=["margin_pct", "disc_bin"])
+
+    # stability filter
+    disc = disc[(disc["orders"] >= 20) & (disc["sales"] >= 3000)].copy()
+
+    top_subcats = (
+        d.groupby("sub_category")["sales"].sum().sort_values(ascending=False).head(top_n).index
+    )
+    disc_top = disc[disc["sub_category"].isin(top_subcats)].copy()
+    disc_top["disc_bin"] = disc_top["disc_bin"].astype(str)
+    if disc_top.empty:
+        empty = (
+            alt.Chart(pd.DataFrame({"message": ["No discount-bin data for current filters"]}))
+            .mark_text(align="center", baseline="middle", fontSize=14, color="#334155")
+            .encode(text="message:N")
+            .properties(width=width, height=min(height, 140), title="Discount Guardrail Framework")
+        )
+        return _apply_chart_theme(empty)
+
+    # sort rows by worst margin in >35%
+    sens = disc_top[disc_top["disc_bin"] == ">35%"][["sub_category", "margin_pct"]]
+    row_order = sens.sort_values("margin_pct")["sub_category"].tolist() if len(sens) else list(top_subcats)
+
+    CLAMP = 40
+    disc_top["margin_clamped"] = disc_top["margin_pct"].clip(-CLAMP, CLAMP)
+
+    heat = (
+        alt.Chart(disc_top)
+        .mark_rect()
+        .encode(
+            x=alt.X("disc_bin:N", sort=labels, title="Discount Bucket (%)"),
+            y=alt.Y("sub_category:N", sort=row_order, title="Subcategory"),
+            color=alt.Color(
+                "margin_clamped:Q",
+                title="Profit Margin (%)",
+                scale=alt.Scale(scheme="redblue", domain=[-CLAMP, CLAMP], domainMid=0),
+            ),
+            tooltip=[
+                "sub_category:N",
+                "disc_bin:N",
+                alt.Tooltip("orders:Q", format=",.0f", title="Orders"),
+                alt.Tooltip("sales:Q", format=",.0f", title="Total Sales"),
+                alt.Tooltip("margin_pct:Q", format=".2f", title="Profit Margin (%)"),
+            ],
+        )
+        .properties(width=width, height=height, title="Discount Guardrail Framework")
+    )
+
+    return _apply_chart_theme(heat)
+
+# -----------------------------
+# 5) Bundle table chart (Altair table-style with lift highlighted)
+# Input is already prepared mba_table_df with columns:
+# sub_cat1, sub_cat2, support, confidence, lift
+# -----------------------------
+def bundle_table_chart(mba_table_df: pd.DataFrame, top_n: int = 10) -> alt.ConcatChart:
+    d = mba_table_df.head(top_n).copy()
+    d["row"] = range(1, len(d) + 1)
+    y = alt.Y("row:O", axis=None)
+
+    c1 = alt.Chart(d).mark_text(align="left", baseline="middle", color="#0f172a").encode(y=y, text="sub_cat1:N")\
+        .properties(width=140, title="Subcategory 1")
+    c2 = alt.Chart(d).mark_text(align="left", baseline="middle", color="#0f172a").encode(y=y, text="sub_cat2:N")\
+        .properties(width=140, title="Subcategory 2")
+    c3 = alt.Chart(d).mark_text(align="right", baseline="middle", color="#0f172a").encode(y=y, text=alt.Text("support:Q", format=".2f"))\
+        .properties(width=90, title="Support (%)")
+    c4 = alt.Chart(d).mark_text(align="right", baseline="middle", color="#0f172a").encode(y=y, text=alt.Text("confidence:Q", format=".2f"))\
+        .properties(width=95, title="Confidence (%)")
+
+    lift_bg = alt.Chart(d).mark_rect().encode(
+        y=y, x=alt.value(0), x2=alt.value(1),
+        color=alt.Color("lift:Q", scale=alt.Scale(scheme="blues"), legend=None)
+    ).properties(width=80)
+
+    lift_text = alt.Chart(d).mark_text(align="right", baseline="middle", color="#111").encode(
+        y=y, text=alt.Text("lift:Q", format=".2f")
+    ).properties(width=80, title="Lift")
+
+    table = alt.hconcat(c1, c2, c3, c4, lift_bg + lift_text, spacing=12)\
+        .resolve_scale(y="shared")\
+        .properties(title="Top Bundle Pairs (Lift Highlighted)")
+
+    return _apply_chart_theme(table)
