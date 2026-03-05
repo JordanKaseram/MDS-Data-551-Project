@@ -417,71 +417,43 @@ def _kpi_value(label: str, value: str, width=155):
     )
     return v + l
 
-def _apply_chart_theme(chart: alt.Chart | alt.LayerChart | alt.ConcatChart):
+def _apply_chart_theme(chart):
+    # Superstore-style theme: clean, high-contrast, readable on laptops
     return (
-        chart.configure_view(strokeOpacity=0)
-        .configure_axis(grid=False)
-        .configure_title(anchor="start")
+        chart
+        .configure_view(strokeOpacity=0)
+        .configure_axis(
+            grid=False,
+            labelColor="#334155",
+            titleColor="#334155",
+            labelFontSize=11,
+            titleFontSize=12,
+        )
+        .configure_title(
+            anchor="start",
+            color="#0f172a",
+            fontSize=14,
+            fontWeight="bold",
+        )
+        .configure_legend(
+            labelColor="#334155",
+            titleColor="#334155",
+            labelFontSize=11,
+            titleFontSize=12,
+        )
     )
 
-# -----------------------------
-# 1) KPI strip (top bar)
-# -----------------------------
-def _kpi_tile(label, value, width=160, height=60):
-    data = pd.DataFrame({"label": [label], "value": [value]})
 
-    value_layer = (
-        alt.Chart(data)
-        .mark_text(align="left", baseline="top", fontSize=20, fontWeight="bold", color="#0f172a")
-        .encode(text="value:N")
-        .properties(width=width, height=height)
-    )
-
-    label_layer = (
-        alt.Chart(data)
-        .mark_text(align="left", baseline="top", dy=28, fontSize=12, color="#475569")
-        .encode(text="label:N")
-        .properties(width=width, height=height)
-    )
-
-    return value_layer + label_layer
-
-
-def kpi_strip(d):
-    total_sales = d["sales"].sum()
-    total_profit = d["profit"].sum()
-    avg_margin = (total_profit / total_sales * 100) if total_sales != 0 else np.nan
-    avg_discount = d["discount"].mean() * 100 if "discount" in d.columns else np.nan
-
-    # frequency = avg line items per order
-    freq = d.groupby("order_id").size().mean() if "order_id" in d.columns else np.nan
-
-    # avg products per txn = avg unique product_name per order
-    if "product_name" in d.columns and "order_id" in d.columns:
-        avg_prod_txn = d.groupby("order_id")["product_name"].nunique().mean()
-    else:
-        avg_prod_txn = np.nan
-
-    n_customers = d["customer_name"].nunique() if "customer_name" in d.columns else d["order_id"].nunique()
-
-    row = alt.hconcat(
-        _kpi_tile("Total Customers", f"{int(n_customers):,}"),
-        _kpi_tile("Average Profit Margin", f"{avg_margin:.1f}%"),
-        _kpi_tile("Average Discount", f"{avg_discount:.1f}%"),
-        _kpi_tile("Average Frequency", f"{freq:.2f}"),
-        _kpi_tile("Average Products/Txn", f"{avg_prod_txn:.2f}"),
-        spacing=18,
-    ).properties(
-        title="Campaign Optimize Profit Strategy"
-    )
-
-    return _apply_chart_theme(row)
-
-# -----------------------------
 # 2) Subcategory discovery bubble
 # x = frequency (% orders), y = margin %, size = sales, color = category
 # -----------------------------
-def subcat_bubble(df_f: pd.DataFrame, width: int = 640, height: int = 340) -> alt.LayerChart:
+def subcat_bubble(
+    df_f: pd.DataFrame,
+    width: int = 640,
+    height: int = 340,
+    show_quadrants: bool = True,
+    show_highlight: bool = True,
+) -> alt.LayerChart:
     total_orders = df_f["order_id"].nunique()
     g = (
         df_f.groupby(["category", "sub_category"], as_index=False)
@@ -516,14 +488,69 @@ def subcat_bubble(df_f: pd.DataFrame, width: int = 640, height: int = 340) -> al
 
     labels = (
         alt.Chart(g)
-        .mark_text(align="left", dx=7, dy=-7, fontSize=10, color="#334155")
+        .mark_text(align="left", dx=7, dy=-7, fontSize=12, color="#0f172a")
         .encode(x="freq_pct:Q", y="margin_pct:Q", text="sub_category:N")
     )
 
     vline = alt.Chart(pd.DataFrame({"x": [x_med]})).mark_rule(strokeDash=[6, 6], opacity=0.5).encode(x="x:Q")
     hline = alt.Chart(pd.DataFrame({"y": [y_med]})).mark_rule(strokeDash=[6, 6], opacity=0.5).encode(y="y:Q")
 
-    return _apply_chart_theme(points + labels + vline + hline)
+    # ---- Strategy overlays: quadrant labels + highlight ----
+    overlay = alt.LayerChart()
+
+    if show_highlight and len(g) > 0:
+        # Opportunity = high margin among below-median frequency
+        try:
+            candidates = g[g["freq_pct"] <= x_med].copy()
+            opp = (
+                candidates.sort_values("margin_pct", ascending=False).head(1)
+                if not candidates.empty
+                else g.sort_values("margin_pct", ascending=False).head(1)
+            )
+
+            highlight = alt.Chart(opp).mark_point(
+                filled=False, size=600, strokeWidth=3, opacity=0.9
+            ).encode(x="freq_pct:Q", y="margin_pct:Q")
+
+            highlight_lbl = alt.Chart(opp).mark_text(
+                align="left",
+                dx=10,
+                dy=-10,
+                fontSize=12,
+                fontWeight="bold",
+                color="#0f172a",
+            ).encode(x="freq_pct:Q", y="margin_pct:Q", text=alt.value("Opportunity"))
+
+            overlay = overlay + highlight + highlight_lbl
+        except Exception:
+            pass
+
+    if show_quadrants and len(g) > 0:
+        try:
+            quad_df = pd.DataFrame(
+                {
+                    "x": [x_med * 0.35, x_med * 0.35, x_med * 1.25, x_med * 1.25],
+                    "y": [y_med * 1.25, y_med * 0.35, y_med * 1.25, y_med * 0.35],
+                    "label": [
+                        "Promote (High M / Low F)",
+                        "Review (Low M / Low F)",
+                        "Hero (High M / High F)",
+                        "Fix (Low M / High F)",
+                    ],
+                }
+            )
+            quad = alt.Chart(quad_df).mark_text(
+                fontSize=12,
+                fontWeight="bold",
+                opacity=0.55,
+                color="#334155",
+            ).encode(x="x:Q", y="y:Q", text="label:N")
+
+            overlay = overlay + quad
+        except Exception:
+            pass
+
+    return _apply_chart_theme(points + labels + vline + hline + overlay)
 
 # -----------------------------
 # 3) Product panel (Top 5 products sorted by margin%)
@@ -534,8 +561,26 @@ def top_products_panel(
     top_n: int = 5,
     label_width: int = 300,
     metric_width: int = 120,
+    sales_width: int | None = None,
+    customers_width: int | None = None,
     panel_height: int = 220,
+    # Backward/alternate aliases (safe to ignore if unused)
+    m_width: int | None = None,
+    s_width: int | None = None,
+    c_width: int | None = None,
 ) -> alt.ConcatChart:
+    # --- width alias handling ---
+    if m_width is not None:
+        metric_width = m_width
+    if s_width is not None:
+        sales_width = s_width
+    if c_width is not None:
+        customers_width = c_width
+    if sales_width is None:
+        sales_width = metric_width
+    if customers_width is None:
+        customers_width = metric_width
+
     if "customer_name" in df_f.columns:
         cust_agg = ("customer_name", "nunique")
     else:
@@ -602,7 +647,7 @@ def top_products_panel(
                 alt.Tooltip("sales:Q", title="Total Sales", format=",.0f"),
             ],
         )
-        .properties(width=metric_width, height=panel_height, title=alt.TitleParams("Total Sales", anchor="middle"))
+        .properties(width=sales_width, height=panel_height, title=alt.TitleParams("Total Sales", anchor="middle"))
     )
 
     c_bar = (
@@ -616,7 +661,7 @@ def top_products_panel(
                 alt.Tooltip("customers:Q", title="Customers"),
             ],
         )
-        .properties(width=metric_width, height=panel_height, title=alt.TitleParams("Customers", anchor="middle"))
+        .properties(width=customers_width, height=panel_height, title=alt.TitleParams("Customers", anchor="middle"))
     )
 
     panel = (

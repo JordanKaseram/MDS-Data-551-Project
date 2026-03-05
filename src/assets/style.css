@@ -1,0 +1,158 @@
+/* Superstore Theme + Responsive Layout (clean) */
+:root{
+  --bg: #f6f8fb;
+  --card: #ffffff;
+  --text: #0b1f3a;        /* deep navy */
+  --muted: #5b6b7a;
+  --border: rgba(20, 60, 95, 0.18);
+  --shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+  --radius: 14px;
+
+  --accent: #0ea5a4;      /* teal */
+  --accent2: #2563eb;     /* blue */
+  --warm: #f59e0b;        /* orange */
+  --purple: #6d28d9;      /* slider purple */
+}
+
+html, body{
+  height: auto;
+}
+
+body{
+  margin: 0;
+  padding: 10px 12px 18px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  overflow-y: auto;   /* allow page scroll */
+  overflow-x: hidden;
+}
+
+/* ---------- Layout containers ---------- */
+.container{
+  max-width: 1920px;
+  margin: 0 auto;
+}
+
+.header{
+  text-align: center;
+  margin: 8px 0 10px;
+}
+.header h1{
+  margin: 4px 0 2px;
+  font-size: 42px;
+  letter-spacing: -0.02em;
+}
+.header .subtitle{
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.row{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+.row.row-top{
+  grid-template-columns: 1.25fr 1fr 1.75fr;
+  align-items: stretch;
+}
+.row.row-kpi{
+  grid-template-columns: repeat(7, 1fr);
+}
+.row.row-tall{
+  grid-template-columns: 2fr 1.2fr;
+}
+@media (max-width: 1200px){
+  .row.row-top{ grid-template-columns: 1fr; }
+  .row.row-kpi{ grid-template-columns: repeat(2, 1fr); }
+  .row{ grid-template-columns: 1fr; }
+}
+
+/* ---------- Card ---------- */
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-header{
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 10px 12px;
+  border-top: 4px solid var(--accent);
+  border-bottom: 1px solid rgba(20, 60, 95, 0.10);
+}
+.card-header.blue{ border-top-color: var(--accent2); }
+.card-body{
+  padding: 10px 12px 12px;
+  height: 100%;
+}
+
+/* Make chart boxes fixed height so charts fit inside without internal scrollbars */
+.card-body.tall{ height: 460px; }
+.card-body.mid{ height: 320px; }
+.card-body.short{ height: 110px; }
+
+/* ---------- Filters ---------- */
+.filter-title{
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.filter-hint{ color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+.segment-group label{
+  margin-right: 10px;
+}
+
+/* ---------- KPI ---------- */
+.kpi{
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kpi .k-title{
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kpi .k-value{
+  font-size: 22px;
+  font-weight: 900;
+}
+.kpi .k-sub{
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Sparklines inside KPI card */
+.spark{
+  height: 34px;
+}
+
+/* ---------- Iframes (Altair HTML) ---------- */
+.iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* Ensure iframe content doesn't create scrollbars inside card */
+.card-body iframe{
+  width: 100%;
+  height: 100%;
+}
