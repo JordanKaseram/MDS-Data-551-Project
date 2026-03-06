@@ -1,6 +1,8 @@
 
 from pathlib import Path
 import sys
+from collections import Counter
+from itertools import combinations
 
 
 def _fix_altair_html(html: str) -> str:
@@ -102,7 +104,7 @@ def _make_ts(d: pd.DataFrame) -> pd.DataFrame:
 
 def _sparkline(ts: pd.DataFrame, y: str, title: str = "") -> str:
     if ts is None or ts.empty or y not in ts.columns:
-        empty = alt.Chart(pd.DataFrame({"x":[0], "y":[0]})).mark_line().properties(width=150, height=48)
+        empty = alt.Chart(pd.DataFrame({"x":[0], "y":[0]})).mark_line().properties(width=84, height=42)
         return empty.to_html(embed_options={"actions": False})
 
     base = (
@@ -116,7 +118,7 @@ def _sparkline(ts: pd.DataFrame, y: str, title: str = "") -> str:
                 alt.Tooltip(f"{y}:Q", title=title or y),
             ],
         )
-        .properties(width=150, height=48)
+        .properties(width=84, height=42)
     )
     dot = alt.Chart(ts.tail(1)).mark_point(size=60).encode(x="month:T", y=f"{y}:Q")
 
@@ -152,49 +154,68 @@ def _kpi_card(title: str, value: str, delta: str, spark_srcdoc: str) -> html.Div
 
 
 def _compute_mba_table(d: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
-    """Compute top bundle pairs (sub_category) using association rules.
-
-    Returns columns: sub_cat1, sub_cat2, support, confidence, lift
-    """
-    try:
-        from mlxtend.frequent_patterns import apriori, association_rules
-    except Exception:
-        return pd.DataFrame(columns=["sub_cat1","sub_cat2","support","confidence","lift"])
-
+    """Compute directed 1:1 bundle rules from order-level subcategory co-occurrence."""
+    cols = ["sub_cat1", "sub_cat2", "support", "confidence", "lift"]
     if d is None or d.empty:
-        return pd.DataFrame(columns=["sub_cat1","sub_cat2","support","confidence","lift"])
+        return pd.DataFrame(columns=cols)
 
     x = d[["order_id", "sub_category"]].dropna().drop_duplicates()
     if x.empty:
-        return pd.DataFrame(columns=["sub_cat1","sub_cat2","support","confidence","lift"])
+        return pd.DataFrame(columns=cols)
 
-    # Speed guard: keep most common subcategories in current filter
-    top_cats = x["sub_category"].value_counts().head(25).index
+    # Keep frequent subcategories to reduce noise and compute cost.
+    top_cats = x["sub_category"].value_counts().head(30).index
     x = x[x["sub_category"].isin(top_cats)]
+    if x.empty:
+        return pd.DataFrame(columns=cols)
 
-    basket = pd.crosstab(x["order_id"], x["sub_category"]).astype(bool)
+    grouped = (
+        x.groupby("order_id", sort=False)["sub_category"]
+        .agg(lambda s: sorted(set(s)))
+        .tolist()
+    )
+    n_orders = len(grouped)
+    if n_orders == 0:
+        return pd.DataFrame(columns=cols)
 
-    # Adaptive support: aim for enough itemsets but avoid explosion
-    min_support = max(0.002, min(0.02, 5 / max(len(basket), 1)))  # roughly 5 orders minimum
-    itemsets = apriori(basket, min_support=min_support, use_colnames=True)
-    if itemsets.empty:
-        return pd.DataFrame(columns=["sub_cat1","sub_cat2","support","confidence","lift"])
+    item_counts = Counter()
+    pair_counts = Counter()
+    for items in grouped:
+        if not items:
+            continue
+        item_counts.update(items)
+        if len(items) > 1:
+            pair_counts.update(combinations(items, 2))
 
-    rules = association_rules(itemsets, metric="lift", min_threshold=1.0)
-    if rules.empty:
-        return pd.DataFrame(columns=["sub_cat1","sub_cat2","support","confidence","lift"])
+    if not pair_counts:
+        return pd.DataFrame(columns=cols)
 
-    # Only 1-to-1 rules for clean bundles
-    rules = rules[(rules["antecedents"].apply(len) == 1) & (rules["consequents"].apply(len) == 1)].copy()
-    if rules.empty:
-        return pd.DataFrame(columns=["sub_cat1","sub_cat2","support","confidence","lift"])
+    rows = []
+    for (a, b), cnt_ab in pair_counts.items():
+        p_ab = cnt_ab / n_orders
+        p_a = item_counts[a] / n_orders
+        p_b = item_counts[b] / n_orders
+        if p_a <= 0 or p_b <= 0:
+            continue
 
-    rules["sub_cat1"] = rules["antecedents"].apply(lambda s: next(iter(s)))
-    rules["sub_cat2"] = rules["consequents"].apply(lambda s: next(iter(s)))
+        conf_a_b = p_ab / p_a
+        conf_b_a = p_ab / p_b
+        lift_a_b = conf_a_b / p_b
+        lift_b_a = conf_b_a / p_a
+
+        rows.append(
+            {"sub_cat1": a, "sub_cat2": b, "support": p_ab, "confidence": conf_a_b, "lift": lift_a_b}
+        )
+        rows.append(
+            {"sub_cat1": b, "sub_cat2": a, "support": p_ab, "confidence": conf_b_a, "lift": lift_b_a}
+        )
+
+    if not rows:
+        return pd.DataFrame(columns=cols)
 
     out = (
-        rules[["sub_cat1","sub_cat2","support","confidence","lift"]]
-        .sort_values(["lift","confidence","support"], ascending=False)
+        pd.DataFrame(rows, columns=cols)
+        .sort_values(["lift", "confidence", "support"], ascending=False)
         .head(top_n)
         .reset_index(drop=True)
     )
@@ -340,6 +361,7 @@ app.layout = html.Div(
                                     options=[{"label": s, "value": s} for s in SEASONS],
                                     value="All",
                                     className="pill-group",
+                                    inline=True,
                                 ),
                             ],
                             className="card filter-card",
@@ -350,8 +372,9 @@ app.layout = html.Div(
                                 dcc.Checklist(
                                     id="segment",
                                     options=[{"label": s, "value": s} for s in SEGMENTS],
-                                    value=[],
+                                    value=SEGMENTS,
                                     className="pill-group",
+                                    inline=True,
                                 ),
                                 html.Div("Tip: select multiple segments to compare", className="filter-hint"),
                             ],
@@ -385,7 +408,7 @@ app.layout = html.Div(
                                     dcc.Graph(
                                         id="subcat-graph",
                                         config={"displayModeBar": False},
-                                        style={"height": "460px"},
+                                        style={"height": "520px"},
                                     ),
                                     className="card-body",
                                 ),
@@ -407,7 +430,7 @@ app.layout = html.Div(
                                             {"name": "Recommendation", "id": "rec"},
                                         ],
                                         data=[],
-                                        style_table={"height": "100%", "minHeight": "100%", "overflowY": "hidden", "overflowX": "auto"},
+                                        style_table={"height": "100%", "minHeight": "100%", "overflowY": "auto", "overflowX": "auto"},
                                         style_header={
                                             "fontWeight": "800",
                                             "backgroundColor": "#f8fafc",
@@ -443,7 +466,7 @@ app.layout = html.Div(
                             [
                                 html.Div("Breakdown: Top 5 Products", className="card-header"),
                                 html.Div(
-                                    html.Iframe(id="top-products-frame", className="iframe", style={"height": "320px"}),
+                                    html.Iframe(id="top-products-frame", className="iframe", style={"height": "400px"}),
                                     className="card-body",
                                 ),
                             ],
@@ -453,7 +476,7 @@ app.layout = html.Div(
                             [
                                 html.Div("Pricing Strategy (Discount Guardrails)", className="card-header"),
                                 html.Div(
-                                    html.Iframe(id="pricing-frame", className="iframe", style={"height": "320px"}),
+                                    html.Iframe(id="pricing-frame", className="iframe", style={"height": "400px"}),
                                     className="card-body",
                                 ),
                             ],
@@ -580,9 +603,9 @@ def update_dashboard(year_range, season, segments, clickData, hoverData):
         metric_width=120,
         sales_width=250,
         customers_width=250,
-        panel_height=260,
+        panel_height=350,
     )
-    pricing = ch.discount_guardrail(d_focus, top_n=12, width=520, height=300)
+    pricing = ch.discount_guardrail(d_focus, top_n=12, width=620, height=380)
 
     # MBA table
     mba_df = _compute_mba_table(d, top_n=5)
