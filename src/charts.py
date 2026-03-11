@@ -426,7 +426,7 @@ def _apply_chart_theme(chart):
             grid=False,
             labelColor="#334155",
             titleColor="#334155",
-            labelFontSize=11,
+            labelFontSize=13,
             titleFontSize=12,
         )
         .configure_title(
