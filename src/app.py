@@ -1,8 +1,6 @@
 
 from pathlib import Path
 import sys
-from collections import Counter
-from itertools import combinations
 
 
 def _fix_altair_html(html: str) -> str:
@@ -22,7 +20,7 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
-from dash import Dash, html, dcc, Input, Output, dash_table
+from dash import Dash, html, dcc, Input, Output
 import pandas as pd
 import numpy as np
 import altair as alt
@@ -153,75 +151,6 @@ def _kpi_card(title: str, value: str, delta: str, spark_srcdoc: str) -> html.Div
 
 
 
-def _compute_mba_table(d: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
-    """Compute directed 1:1 bundle rules from order-level subcategory co-occurrence."""
-    cols = ["sub_cat1", "sub_cat2", "support", "confidence", "lift"]
-    if d is None or d.empty:
-        return pd.DataFrame(columns=cols)
-
-    x = d[["order_id", "sub_category"]].dropna().drop_duplicates()
-    if x.empty:
-        return pd.DataFrame(columns=cols)
-
-    # Keep frequent subcategories to reduce noise and compute cost.
-    top_cats = x["sub_category"].value_counts().head(30).index
-    x = x[x["sub_category"].isin(top_cats)]
-    if x.empty:
-        return pd.DataFrame(columns=cols)
-
-    grouped = (
-        x.groupby("order_id", sort=False)["sub_category"]
-        .agg(lambda s: sorted(set(s)))
-        .tolist()
-    )
-    n_orders = len(grouped)
-    if n_orders == 0:
-        return pd.DataFrame(columns=cols)
-
-    item_counts = Counter()
-    pair_counts = Counter()
-    for items in grouped:
-        if not items:
-            continue
-        item_counts.update(items)
-        if len(items) > 1:
-            pair_counts.update(combinations(items, 2))
-
-    if not pair_counts:
-        return pd.DataFrame(columns=cols)
-
-    rows = []
-    for (a, b), cnt_ab in pair_counts.items():
-        p_ab = cnt_ab / n_orders
-        p_a = item_counts[a] / n_orders
-        p_b = item_counts[b] / n_orders
-        if p_a <= 0 or p_b <= 0:
-            continue
-
-        conf_a_b = p_ab / p_a
-        conf_b_a = p_ab / p_b
-        lift_a_b = conf_a_b / p_b
-        lift_b_a = conf_b_a / p_a
-
-        rows.append(
-            {"sub_cat1": a, "sub_cat2": b, "support": p_ab, "confidence": conf_a_b, "lift": lift_a_b}
-        )
-        rows.append(
-            {"sub_cat1": b, "sub_cat2": a, "support": p_ab, "confidence": conf_b_a, "lift": lift_b_a}
-        )
-
-    if not rows:
-        return pd.DataFrame(columns=cols)
-
-    out = (
-        pd.DataFrame(rows, columns=cols)
-        .sort_values(["lift", "confidence", "support"], ascending=False)
-        .head(top_n)
-        .reset_index(drop=True)
-    )
-    return out
-
-
 def _subcat_agg(d: pd.DataFrame) -> pd.DataFrame:
     """Aggregate to subcategory-level metrics used in the opportunity bubble chart."""
     if d is None or d.empty:
@@ -241,7 +170,11 @@ def _subcat_agg(d: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
-def _subcat_plotly(g: pd.DataFrame, selected_category: str | None = None):
+def _subcat_plotly(
+    g: pd.DataFrame,
+    selected_category: str | None = None,
+    selected_pairs: list[tuple[str, str]] | None = None,
+):
     """Plotly bubble chart that can drive Dash interactions."""
     if g is None or g.empty:
         fig = px.scatter(pd.DataFrame({"x": [], "y": []}), x="x", y="y")
@@ -261,8 +194,31 @@ def _subcat_plotly(g: pd.DataFrame, selected_category: str | None = None):
         size="sales",
         hover_name="sub_category",
         hover_data={"sales": ":,.0f", "freq_pct": ":.2f", "margin_pct": ":.2f", "category": True},
-        custom_data=["category"],
+        custom_data=["category", "sub_category"],
     )
+
+    selected_pair_set = set(selected_pairs or [])
+
+    # Selection mode: only selected bubbles are emphasized.
+    if selected_pair_set:
+        for trace in fig.data:
+            trace_subcats = g.loc[g["category"] == trace.name, "sub_category"].tolist()
+            sel_idx = [i for i, subcat in enumerate(trace_subcats) if (trace.name, subcat) in selected_pair_set]
+            trace.update(
+                selectedpoints=sel_idx if sel_idx else [],
+                selected=dict(marker=dict(opacity=1.0)),
+                unselected=dict(marker=dict(opacity=0.15)),
+            )
+    # Hover/click fallback mode: emphasize active category.
+    elif selected_category:
+        for trace in fig.data:
+            is_active = trace.name == selected_category
+            trace.update(
+                marker=dict(
+                    opacity=1.0 if is_active else 0.22,
+                    line=dict(color="#ffffff", width=1.2 if is_active else 0.0),
+                )
+            )
 
     # Median lines for quadrant guidance
     x_med = float(g["freq_pct"].median()) if len(g) else 0
@@ -295,7 +251,9 @@ def _subcat_plotly(g: pd.DataFrame, selected_category: str | None = None):
 
 
     title = "Subcategory Discovery (Frequency vs Profit Margin)"
-    if selected_category:
+    if selected_pair_set:
+        title += f" — {len(selected_pair_set)} selected bubble(s)"
+    elif selected_category:
         title += f" — filtered to {selected_category}"
 
     fig.update_layout(
@@ -303,11 +261,51 @@ def _subcat_plotly(g: pd.DataFrame, selected_category: str | None = None):
         margin=dict(l=10, r=10, t=50, b=10),
         height=460,
         legend_title_text="Category",
+        clickmode="event+select",
+        dragmode="select",
+        uirevision="subcat-selection",
         title=title,
     )
-    fig.update_xaxes(title="Purchase Frequency (% of Orders)")
-    fig.update_yaxes(title="Profit Margin (%)")
+    fig.update_xaxes(title="Purchase Frequency (% of Orders)", tickfont=dict(size=14))
+    fig.update_yaxes(title="Profit Margin (%)", tickfont=dict(size=14))
     return fig
+
+
+def _extract_category(event_data: dict | None) -> str | None:
+    """Read selected category from Plotly hover/click payload."""
+    if not event_data or not isinstance(event_data, dict):
+        return None
+    points = event_data.get("points")
+    if not points:
+        return None
+
+    p0 = points[0]
+    custom = p0.get("customdata")
+    if isinstance(custom, (list, tuple)) and custom:
+        return str(custom[0]) if custom[0] is not None else None
+    if isinstance(custom, str) and custom:
+        return custom
+    return None
+
+
+def _extract_selected_pairs(event_data: dict | None) -> list[tuple[str, str]]:
+    """Read selected category/subcategory pairs from Plotly selectedData payload."""
+    if not event_data or not isinstance(event_data, dict):
+        return []
+    points = event_data.get("points")
+    if not points:
+        return []
+
+    pairs: list[tuple[str, str]] = []
+    for point in points:
+        custom = point.get("customdata")
+        if isinstance(custom, (list, tuple)) and len(custom) >= 2:
+            cat, subcat = custom[0], custom[1]
+            if cat is not None and subcat is not None:
+                pairs.append((str(cat), str(subcat)))
+
+    # De-duplicate while preserving order.
+    return list(dict.fromkeys(pairs))
 
 
 # -----------------------------
@@ -398,7 +396,7 @@ app.layout = html.Div(
                     className="kpi-row",
                 ),
 
-                # Main row: bubble + MBA (DataTable)
+                # Main row: bubble chart
                 html.Div(
                     [
                         html.Div(
@@ -408,6 +406,7 @@ app.layout = html.Div(
                                     dcc.Graph(
                                         id="subcat-graph",
                                         config={"displayModeBar": False},
+                                        clear_on_unhover=True,
                                         style={"height": "520px"},
                                     ),
                                     className="card-body",
@@ -415,48 +414,8 @@ app.layout = html.Div(
                             ],
                             className="card",
                         ),
-                        html.Div(
-                            [
-                                html.Div("Top 5 Bundle Opportunities (Frequently Bought Together)", className="card-header"),
-                                html.Div(
-                                    dash_table.DataTable(
-                                        id="mba-table",
-                                        columns=[
-                                            {"name": "Subcategory 1", "id": "sub_cat1"},
-                                            {"name": "Subcategory 2", "id": "sub_cat2"},
-                                            {"name": "Bundle Rate (%)", "id": "support_pct"},
-                                            {"name": "Attach Rate (%)", "id": "confidence_pct"},
-                                            {"name": "Lift (Strength)", "id": "lift"},
-                                            {"name": "Recommendation", "id": "rec"},
-                                        ],
-                                        data=[],
-                                        style_table={"height": "100%", "minHeight": "100%", "overflowY": "auto", "overflowX": "auto"},
-                                        style_header={
-                                            "fontWeight": "800",
-                                            "backgroundColor": "#f8fafc",
-                                            "border": "1px solid rgba(15,23,42,0.08)",
-                                        },
-                                        style_cell={
-                                            "fontSize": "13px",
-                                            "padding": "10px",
-                                            "color": "#0f172a",
-                                            "border": "1px solid rgba(15,23,42,0.06)",
-                                            "whiteSpace": "normal",
-                                            "height": "auto",
-                                            "maxWidth": 180,
-                                        },
-                                        style_data_conditional=[
-                                            {"if": {"row_index": "odd"}, "backgroundColor": "#fbfdff"},
-                                        ],
-                                        sort_action="native",
-                                    ),
-                                    className="card-body",
-                                ),
-                            ],
-                            className="card",
-                        ),
                     ],
-                    className="row row-tall",
+                    className="row row-tall row-single",
                 ),
 
                 # Bottom row: products + pricing
@@ -507,14 +466,14 @@ app.layout = html.Div(
     Output("subcat-graph", "figure"),
     Output("top-products-frame", "srcDoc"),
     Output("pricing-frame", "srcDoc"),
-    Output("mba-table", "data"),
     Input("year-range", "value"),
     Input("season", "value"),
     Input("segment", "value"),
+    Input("subcat-graph", "selectedData"),
     Input("subcat-graph", "clickData"),
     Input("subcat-graph", "hoverData"),
 )
-def update_dashboard(year_range, season, segments, clickData, hoverData):
+def update_dashboard(year_range, season, segments, selectedData, clickData, hoverData):
     d = df.copy()
 
     # Year range filter
@@ -574,23 +533,32 @@ def update_dashboard(year_range, season, segments, clickData, hoverData):
     k_frequency = _kpi_card("Frequency", f"{frequency:.2f}", d_freq, sp_freq)
     k_avgp = _kpi_card("Avg products / txn", f"{avg_products:.2f}", d_avgp, sp_avgp)
 
-    # Bubble chart selection (drives the two charts below)
-    selected_category = None
-    try:
-        if clickData and clickData.get("points"):
-            selected_category = (clickData["points"][0].get("customdata") or [None])[0]
-        elif hoverData and hoverData.get("points"):
-            selected_category = (hoverData["points"][0].get("customdata") or [None])[0]
-    except Exception:
-        selected_category = None
-
     # Interactive bubble chart (Plotly)
     g_sub = _subcat_agg(d)
-    subcat_fig = _subcat_plotly(g_sub)
+    valid_pairs = {
+        (str(cat), str(subcat))
+        for cat, subcat in g_sub[["category", "sub_category"]].dropna().itertuples(index=False, name=None)
+    }
+    selected_pairs = [p for p in _extract_selected_pairs(selectedData) if p in valid_pairs]
+
+    # Bubble chart interaction priority:
+    # 1) selected bubbles, 2) hovered category, 3) clicked category.
+    selected_category = None
+    if not selected_pairs:
+        selected_category = _extract_category(hoverData) or _extract_category(clickData)
+
+    subcat_fig = _subcat_plotly(
+        g_sub,
+        selected_category=selected_category,
+        selected_pairs=selected_pairs,
+    )
 
     # Focus dataset for dependent charts
     d_focus = d
-    if selected_category and "category" in d_focus.columns:
+    if selected_pairs:
+        pair_df = pd.DataFrame(selected_pairs, columns=["category", "sub_category"])
+        d_focus = d_focus.merge(pair_df, on=["category", "sub_category"], how="inner")
+    elif selected_category and "category" in d_focus.columns:
         d_tmp = d_focus[d_focus["category"] == selected_category]
         if len(d_tmp):
             d_focus = d_tmp
@@ -607,30 +575,6 @@ def update_dashboard(year_range, season, segments, clickData, hoverData):
     )
     pricing = ch.discount_guardrail(d_focus, top_n=12, width=620, height=380)
 
-    # MBA table
-    mba_df = _compute_mba_table(d, top_n=5)
-    mba_data = []
-    if mba_df is not None and len(mba_df) > 0:
-        t = mba_df.copy()
-        for c in ["support", "confidence", "lift"]:
-            if c in t.columns:
-                t[c] = pd.to_numeric(t[c], errors="coerce")
-
-        t["support_pct"] = (t["support"] * 100).round(2) if "support" in t.columns else None
-        t["confidence_pct"] = (t["confidence"] * 100).round(2) if "confidence" in t.columns else None
-        t["lift"] = t["lift"].round(2) if "lift" in t.columns else None
-
-        def rec(row):
-            try:
-                if float(row.get("lift", 0)) >= 1.20:
-                    return "Bundle at checkout"
-                return "Cross-sell suggestion"
-            except Exception:
-                return "Cross-sell suggestion"
-
-        t["rec"] = t.apply(rec, axis=1)
-        mba_data = t[["sub_cat1", "sub_cat2", "support_pct", "confidence_pct", "lift", "rec"]].to_dict("records")
-
     year_text = f"{y0} – {y1}"
 
     return (
@@ -645,7 +589,6 @@ def update_dashboard(year_range, season, segments, clickData, hoverData):
         subcat_fig,
         _fix_altair_html(top_products.to_html(embed_options={"actions": False})),
         _fix_altair_html(pricing.to_html(embed_options={"actions": False})),
-        mba_data,
     )
 
 

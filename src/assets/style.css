@@ -195,6 +195,10 @@ body {
   grid-template-columns: 1.95fr 1fr;
 }
 
+.row.row-single {
+  grid-template-columns: 1fr;
+}
+
 .row.row-tall .card-body {
   min-height: 540px;
 }
