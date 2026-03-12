@@ -1,4 +1,4 @@
-
+﻿
 from pathlib import Path
 import sys
 
@@ -7,7 +7,13 @@ def _fix_altair_html(html: str) -> str:
     """Inject CSS to remove margins/scrollbars inside iframe."""
     if not html:
         return html
-    css = "<style>html,body{margin:0;padding:0;overflow:hidden;background:#fff;} </style>"
+    css = (
+        "<style>"
+        "html,body{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#fff;}"
+        "#vis,.vega-embed,.vega-embed>div{width:100%!important;height:100%!important;overflow:hidden!important;}"
+        "svg,canvas{display:block;}"
+        "</style>"
+    )
     if "<head>" in html:
         return html.replace("<head>", "<head>"+css, 1)
     if "<html" in html:
@@ -20,7 +26,7 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
-from dash import Dash, html, dcc, Input, Output
+from dash import Dash, html, dcc, Input, Output, State, ctx
 import pandas as pd
 import numpy as np
 import altair as alt
@@ -59,14 +65,14 @@ def _pct(v: float, digits: int = 1) -> str:
 
 def _delta_text(current, prev) -> str:
     if current is None or prev is None:
-        return "—"
+        return "โ€”"
     try:
         prev = float(prev)
         current = float(current)
     except Exception:
-        return "—"
+        return "โ€”"
     if prev == 0:
-        return "—"
+        return "โ€”"
     delta = (current - prev) / abs(prev) * 100.0
     sign = "+" if delta >= 0 else ""
     return f"{sign}{delta:.1f}%"
@@ -102,8 +108,8 @@ def _make_ts(d: pd.DataFrame) -> pd.DataFrame:
 
 def _sparkline(ts: pd.DataFrame, y: str, title: str = "") -> str:
     if ts is None or ts.empty or y not in ts.columns:
-        empty = alt.Chart(pd.DataFrame({"x":[0], "y":[0]})).mark_line().properties(width=84, height=42)
-        return empty.to_html(embed_options={"actions": False})
+        empty = alt.Chart(pd.DataFrame({"x":[0], "y":[0]})).mark_line().properties(width=80, height=38)
+        return _fix_altair_html(empty.to_html(embed_options={"actions": False}))
 
     base = (
         alt.Chart(ts)
@@ -116,15 +122,17 @@ def _sparkline(ts: pd.DataFrame, y: str, title: str = "") -> str:
                 alt.Tooltip(f"{y}:Q", title=title or y),
             ],
         )
-        .properties(width=84, height=42)
+        .properties(width=80, height=38)
     )
-    dot = alt.Chart(ts.tail(1)).mark_point(size=60).encode(x="month:T", y=f"{y}:Q")
+    dot = alt.Chart(ts.tail(1)).mark_point(size=36).encode(x="month:T", y=f"{y}:Q")
 
     return (
-        (base + dot)
-        .configure_view(strokeOpacity=0)
-        .configure_axis(grid=False)
-        .to_html(embed_options={"actions": False})
+        _fix_altair_html(
+            (base + dot)
+            .configure_view(strokeOpacity=0)
+            .configure_axis(grid=False)
+            .to_html(embed_options={"actions": False})
+        )
     )
 
 
@@ -174,6 +182,8 @@ def _subcat_plotly(
     g: pd.DataFrame,
     selected_category: str | None = None,
     selected_pairs: list[tuple[str, str]] | None = None,
+    active_pair: tuple[str, str] | None = None,
+    locked_pair: tuple[str, str] | None = None,
 ):
     """Plotly bubble chart that can drive Dash interactions."""
     if g is None or g.empty:
@@ -182,7 +192,6 @@ def _subcat_plotly(
             template="plotly_white",
             margin=dict(l=10, r=10, t=40, b=10),
             height=460,
-            title="Subcategory Discovery (Frequency vs Profit Margin)",
         )
         return fig
 
@@ -198,16 +207,28 @@ def _subcat_plotly(
     )
 
     selected_pair_set = set(selected_pairs or [])
+    active_pair_set = {active_pair} if active_pair else set()
+    locked_pair_set = {locked_pair} if locked_pair else set()
 
     # Selection mode: only selected bubbles are emphasized.
-    if selected_pair_set:
+    if selected_pair_set or active_pair_set:
         for trace in fig.data:
             trace_subcats = g.loc[g["category"] == trace.name, "sub_category"].tolist()
-            sel_idx = [i for i, subcat in enumerate(trace_subcats) if (trace.name, subcat) in selected_pair_set]
+            emphasized_pairs = selected_pair_set or active_pair_set
+            sel_idx = [i for i, subcat in enumerate(trace_subcats) if (trace.name, subcat) in emphasized_pairs]
             trace.update(
                 selectedpoints=sel_idx if sel_idx else [],
                 selected=dict(marker=dict(opacity=1.0)),
-                unselected=dict(marker=dict(opacity=0.15)),
+                unselected=dict(marker=dict(opacity=0.16)),
+            )
+    elif locked_pair_set:
+        for trace in fig.data:
+            trace_subcats = g.loc[g["category"] == trace.name, "sub_category"].tolist()
+            sel_idx = [i for i, subcat in enumerate(trace_subcats) if (trace.name, subcat) in locked_pair_set]
+            trace.update(
+                selectedpoints=sel_idx if sel_idx else [],
+                selected=dict(marker=dict(opacity=1.0)),
+                unselected=dict(marker=dict(opacity=0.16)),
             )
     # Hover/click fallback mode: emphasize active category.
     elif selected_category:
@@ -230,44 +251,38 @@ def _subcat_plotly(
     x0, x1 = float(g["freq_pct"].min()), float(g["freq_pct"].max())
     y0, y1 = float(g["margin_pct"].min()), float(g["margin_pct"].max())
     pad_x = (x1 - x0) * 0.02 if x1 > x0 else 0.2
-    pad_y = (y1 - y0) * 0.06 if y1 > y0 else 0.6
+    pad_y = (y1 - y0) * 0.04 if y1 > y0 else 0.6
 
     fig.add_annotation(x=x0 + pad_x, y=y1 - pad_y,
-                       text="⭐ Invest (High margin / Low frequency)",
+                       text="Invest (High margin / Low frequency)",
                        showarrow=False, xanchor="left", yanchor="top",
-                       font=dict(size=12, color="#334155"))
+                       font=dict(size=14, color="#334155"))
     fig.add_annotation(x=x1 - pad_x, y=y1 - pad_y,
-                       text="🚀 Grow (High margin / High frequency)",
+                       text="Grow (High margin / High frequency)",
                        showarrow=False, xanchor="right", yanchor="top",
-                       font=dict(size=12, color="#334155"))
+                       font=dict(size=14, color="#334155"))
     fig.add_annotation(x=x0 + pad_x, y=y0 + pad_y,
-                       text="⚠️ Fix/Exit (Low margin / Low frequency)",
+                       text="Fix/Exit (Low margin / Low frequency)",
                        showarrow=False, xanchor="left", yanchor="bottom",
-                       font=dict(size=12, color="#334155"))
+                       font=dict(size=14, color="#334155"))
     fig.add_annotation(x=x1 - pad_x, y=y0 + pad_y,
-                       text="📣 Promote (Low margin / High frequency)",
+                       text="Promote (Low margin / High frequency)",
                        showarrow=False, xanchor="right", yanchor="bottom",
-                       font=dict(size=12, color="#334155"))
-
-
-    title = "Subcategory Discovery (Frequency vs Profit Margin)"
-    if selected_pair_set:
-        title += f" — {len(selected_pair_set)} selected bubble(s)"
-    elif selected_category:
-        title += f" — filtered to {selected_category}"
+                       font=dict(size=14, color="#334155"))
 
     fig.update_layout(
         template="plotly_white",
-        margin=dict(l=10, r=10, t=50, b=10),
-        height=460,
+        margin=dict(l=20, r=20, t=18, b=24),
+        height=520,
         legend_title_text="Category",
         clickmode="event+select",
         dragmode="select",
+        hovermode="closest",
         uirevision="subcat-selection",
-        title=title,
+        legend=dict(font=dict(size=15), title_font=dict(size=16)),
     )
-    fig.update_xaxes(title="Purchase Frequency (% of Orders)", tickfont=dict(size=14))
-    fig.update_yaxes(title="Profit Margin (%)", tickfont=dict(size=14))
+    fig.update_xaxes(title="Purchase Frequency (% of Orders)", tickfont=dict(size=16), title_font=dict(size=18))
+    fig.update_yaxes(title="Profit Margin (%)", tickfont=dict(size=16), title_font=dict(size=18))
     return fig
 
 
@@ -308,6 +323,20 @@ def _extract_selected_pairs(event_data: dict | None) -> list[tuple[str, str]]:
     return list(dict.fromkeys(pairs))
 
 
+def _extract_pair(event_data: dict | None) -> tuple[str, str] | None:
+    """Read one category/subcategory pair from Plotly hover/click payload."""
+    pairs = _extract_selected_pairs(event_data)
+    return pairs[0] if pairs else None
+
+
+def _focus_label(selected_pairs, locked_pair, hovered_pair) -> str:
+    if selected_pairs:
+        return f"{len(selected_pairs)} bubble(s) selected"
+    if locked_pair:
+        return f"Locked on {locked_pair[1]}"
+    return "Showing all subcategories"
+
+
 # -----------------------------
 # UI controls data
 # -----------------------------
@@ -326,6 +355,7 @@ app.layout = html.Div(
     [
         html.Div(
             [
+                dcc.Store(id="locked-focus", data=None),
                 html.Div("Profit Optimization Strategy for Retail Campaigns", className="title"),
                 html.Div(
                     "Executive view: identify subcategory opportunities, bundle tactics, and discount guardrails",
@@ -401,13 +431,25 @@ app.layout = html.Div(
                     [
                         html.Div(
                             [
-                                html.Div("Subcategory Opportunity", className="card-header"),
+                                html.Div(
+                                    [
+                                        html.Div("Subcategory Opportunity", className="card-header-title"),
+                                        html.Div(
+                                            [
+                                                html.Div(id="focus-mode-text", className="focus-mode-text"),
+                                                html.Button("Reset focus", id="reset-focus", n_clicks=0, className="reset-focus-btn"),
+                                            ],
+                                            className="focus-controls",
+                                        ),
+                                    ],
+                                    className="card-header card-header-split",
+                                ),
                                 html.Div(
                                     dcc.Graph(
                                         id="subcat-graph",
                                         config={"displayModeBar": False},
                                         clear_on_unhover=True,
-                                        style={"height": "520px"},
+                                        style={"height": "560px"},
                                     ),
                                     className="card-body",
                                 ),
@@ -423,9 +465,9 @@ app.layout = html.Div(
                     [
                         html.Div(
                             [
-                                html.Div("Breakdown: Top 5 Products", className="card-header"),
+                                html.Div("Breakdown: Top 10 Products", className="card-header"),
                                 html.Div(
-                                    html.Iframe(id="top-products-frame", className="iframe", style={"height": "400px"}),
+                                    html.Iframe(id="top-products-frame", className="iframe", style={"height": "500px"}),
                                     className="card-body",
                                 ),
                             ],
@@ -435,7 +477,7 @@ app.layout = html.Div(
                             [
                                 html.Div("Pricing Strategy (Discount Guardrails)", className="card-header"),
                                 html.Div(
-                                    html.Iframe(id="pricing-frame", className="iframe", style={"height": "400px"}),
+                                    html.Iframe(id="pricing-frame", className="iframe", style={"height": "500px"}),
                                     className="card-body",
                                 ),
                             ],
@@ -455,6 +497,36 @@ app.layout = html.Div(
 # Callback
 # -----------------------------
 @app.callback(
+    Output("locked-focus", "data"),
+    Input("subcat-graph", "clickData"),
+    Input("reset-focus", "n_clicks"),
+    Input("year-range", "value"),
+    Input("season", "value"),
+    Input("segment", "value"),
+    State("locked-focus", "data"),
+    prevent_initial_call=True,
+)
+def update_locked_focus(clickData, reset_clicks, year_range, season, segments, locked_focus):
+    trigger = ctx.triggered_id
+
+    if trigger in {"reset-focus", "year-range", "season", "segment"}:
+        return None
+
+    if trigger == "subcat-graph":
+        pair = _extract_pair(clickData)
+        if pair:
+            if (
+                isinstance(locked_focus, dict)
+                and str(locked_focus.get("category")) == pair[0]
+                and str(locked_focus.get("sub_category")) == pair[1]
+            ):
+                return None
+            return {"category": pair[0], "sub_category": pair[1]}
+
+    return locked_focus
+
+
+@app.callback(
     Output("year-range-text", "children"),
     Output("kpi-customers", "children"),
     Output("kpi-revenue", "children"),
@@ -463,6 +535,7 @@ app.layout = html.Div(
     Output("kpi-discount", "children"),
     Output("kpi-frequency", "children"),
     Output("kpi-avg-products", "children"),
+    Output("focus-mode-text", "children"),
     Output("subcat-graph", "figure"),
     Output("top-products-frame", "srcDoc"),
     Output("pricing-frame", "srcDoc"),
@@ -470,10 +543,9 @@ app.layout = html.Div(
     Input("season", "value"),
     Input("segment", "value"),
     Input("subcat-graph", "selectedData"),
-    Input("subcat-graph", "clickData"),
-    Input("subcat-graph", "hoverData"),
+    Input("locked-focus", "data"),
 )
-def update_dashboard(year_range, season, segments, selectedData, clickData, hoverData):
+def update_dashboard(year_range, season, segments, selectedData, locked_focus):
     d = df.copy()
 
     # Year range filter
@@ -542,15 +614,23 @@ def update_dashboard(year_range, season, segments, selectedData, clickData, hove
     selected_pairs = [p for p in _extract_selected_pairs(selectedData) if p in valid_pairs]
 
     # Bubble chart interaction priority:
-    # 1) selected bubbles, 2) hovered category, 3) clicked category.
+    # 1) selected bubbles, 2) locked click focus, 3) default all.
     selected_category = None
-    if not selected_pairs:
-        selected_category = _extract_category(hoverData) or _extract_category(clickData)
+    locked_pair = None
+    if isinstance(locked_focus, dict):
+        cat = locked_focus.get("category")
+        subcat = locked_focus.get("sub_category")
+        if cat is not None and subcat is not None:
+            candidate = (str(cat), str(subcat))
+            if candidate in valid_pairs:
+                locked_pair = candidate
 
     subcat_fig = _subcat_plotly(
         g_sub,
         selected_category=selected_category,
         selected_pairs=selected_pairs,
+        active_pair=None,
+        locked_pair=locked_pair,
     )
 
     # Focus dataset for dependent charts
@@ -558,24 +638,31 @@ def update_dashboard(year_range, season, segments, selectedData, clickData, hove
     if selected_pairs:
         pair_df = pd.DataFrame(selected_pairs, columns=["category", "sub_category"])
         d_focus = d_focus.merge(pair_df, on=["category", "sub_category"], how="inner")
+    elif locked_pair:
+        d_tmp = d_focus[
+            (d_focus["category"] == locked_pair[0]) & (d_focus["sub_category"] == locked_pair[1])
+        ]
+        if len(d_tmp):
+            d_focus = d_tmp
     elif selected_category and "category" in d_focus.columns:
         d_tmp = d_focus[d_focus["category"] == selected_category]
         if len(d_tmp):
             d_focus = d_tmp
 
     # Dependent charts (Altair)
-    top_products = ch.top_products_panel(
+    top_products = ch.top_products_panel_present(
         d_focus,
-        top_n=5,
-        label_width=260,
-        metric_width=120,
-        sales_width=250,
-        customers_width=250,
-        panel_height=350,
+        top_n=10,
+        label_width=210,
+        metric_width=145,
+        sales_width=200,
+        customers_width=145,
+        panel_height=460,
     )
-    pricing = ch.discount_guardrail(d_focus, top_n=12, width=620, height=380)
+    pricing = ch.discount_guardrail(d_focus, top_n=12, width=660, height=500)
 
-    year_text = f"{y0} – {y1}"
+    year_text = f"{y0} โ€“ {y1}"
+    focus_text = _focus_label(selected_pairs, locked_pair, None)
 
     return (
         year_text,
@@ -586,6 +673,7 @@ def update_dashboard(year_range, season, segments, selectedData, clickData, hove
         k_discount,
         k_frequency,
         k_avgp,
+        focus_text,
         subcat_fig,
         _fix_altair_html(top_products.to_html(embed_options={"actions": False})),
         _fix_altair_html(pricing.to_html(embed_options={"actions": False})),
@@ -594,3 +682,6 @@ def update_dashboard(year_range, season, segments, selectedData, clickData, hove
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+
+

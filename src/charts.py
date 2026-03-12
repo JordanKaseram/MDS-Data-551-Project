@@ -418,7 +418,7 @@ def _kpi_value(label: str, value: str, width=155):
     return v + l
 
 def _apply_chart_theme(chart):
-    # Superstore-style theme: clean, high-contrast, readable on laptops
+    # Presentation-first theme: larger labels and stronger contrast.
     return (
         chart
         .configure_view(strokeOpacity=0)
@@ -426,20 +426,20 @@ def _apply_chart_theme(chart):
             grid=False,
             labelColor="#334155",
             titleColor="#334155",
-            labelFontSize=13,
-            titleFontSize=12,
+            labelFontSize=15,
+            titleFontSize=15,
         )
         .configure_title(
             anchor="start",
             color="#0f172a",
-            fontSize=14,
+            fontSize=20,
             fontWeight="bold",
         )
         .configure_legend(
             labelColor="#334155",
             titleColor="#334155",
-            labelFontSize=11,
-            titleFontSize=12,
+            labelFontSize=14,
+            titleFontSize=15,
         )
     )
 
@@ -671,6 +671,125 @@ def top_products_panel(
     )
     return _apply_chart_theme(panel)
 
+
+def top_products_panel_present(
+    df_f: pd.DataFrame,
+    top_n: int = 10,
+    label_width: int = 210,
+    metric_width: int = 145,
+    sales_width: int = 200,
+    customers_width: int = 145,
+    panel_height: int = 460,
+) -> alt.ConcatChart:
+    if "customer_name" in df_f.columns:
+        cust_agg = ("customer_name", "nunique")
+    else:
+        cust_agg = ("order_id", "nunique")
+
+    prod = (
+        df_f.groupby(["sub_category", "product_name"], as_index=False)
+        .agg(sales=("sales", "sum"), profit=("profit", "sum"), customers=cust_agg)
+    )
+    prod["margin_pct"] = _safe_div(prod["profit"], prod["sales"]) * 100
+    prod = prod.replace([np.inf, -np.inf], np.nan).dropna(subset=["margin_pct"])
+
+    if prod.empty:
+        empty = (
+            alt.Chart(pd.DataFrame({"message": ["No product data for the current bubble focus"]}))
+            .mark_text(align="center", baseline="middle", fontSize=18, color="#64748b")
+            .encode(text="message:N")
+            .properties(
+                width=label_width + metric_width + sales_width + customers_width,
+                height=min(panel_height, 140),
+            )
+        )
+        return _apply_chart_theme(empty)
+
+    top = prod.sort_values("margin_pct", ascending=False).head(top_n).copy()
+    top["label"] = top["sub_category"] + " | " + top["product_name"]
+    top["label_short"] = np.where(
+        top["label"].str.len() > 40,
+        top["label"].str.slice(0, 40) + "...",
+        top["label"],
+    )
+    top["margin_label"] = top["margin_pct"].map(lambda v: f"{v:.1f}%")
+    top["sales_label"] = top["sales"].map(lambda v: f"${v:,.0f}")
+    top["customers_label"] = top["customers"].map(lambda v: f"{int(v):,}")
+
+    y_shared = alt.Y(
+        "label_short:N",
+        sort=alt.SortField(field="margin_pct", order="descending"),
+        title=None,
+        axis=None,
+    )
+
+    label_col = (
+        alt.Chart(top)
+        .mark_text(align="left", baseline="middle", color="#334155", dx=0, fontSize=15, fontWeight="bold")
+        .encode(
+            y=y_shared,
+            x=alt.value(0),
+            text="label_short:N",
+            tooltip=[alt.Tooltip("label:N", title="Product")],
+        )
+        .properties(width=label_width, height=panel_height)
+    )
+
+    def _metric_bar(value_field, label_field, title_text, width, color):
+        bars = (
+            alt.Chart(top)
+            .mark_bar(cornerRadiusEnd=5, color=color)
+            .encode(
+                y=y_shared,
+                x=alt.X(
+                    f"{value_field}:Q",
+                    title=title_text,
+                    axis=alt.Axis(grid=True, gridColor="#e2e8f0", labelFontSize=14, titleFontSize=15),
+                ),
+                tooltip=[
+                    alt.Tooltip("label:N", title="Product"),
+                    alt.Tooltip(
+                        f"{value_field}:Q",
+                        title=title_text,
+                        format=",.2f" if value_field == "margin_pct" else ",.0f",
+                    ),
+                    alt.Tooltip("sales:Q", title="Total Sales", format=",.0f"),
+                    alt.Tooltip("customers:Q", title="Customers"),
+                ],
+            )
+            .properties(width=width, height=panel_height, title=alt.TitleParams(title_text, anchor="middle"))
+        )
+        labels = (
+            alt.Chart(top)
+            .mark_text(align="left", baseline="middle", dx=4, color="#1e293b", fontSize=13, fontWeight="bold")
+            .encode(
+                y=y_shared,
+                x=alt.X(f"{value_field}:Q"),
+                text=f"{label_field}:N",
+            )
+        )
+        return bars + labels
+
+    m_bar = _metric_bar("margin_pct", "margin_label", "Profit Margin (%)", metric_width, "#315f93")
+    s_bar = _metric_bar("sales", "sales_label", "Total Sales", sales_width, "#1d8f80")
+    c_bar = _metric_bar("customers", "customers_label", "Customers", customers_width, "#d97706")
+
+    note = (
+        alt.Chart(pd.DataFrame({"note": ["Top 10 products. Click or select bubbles above to filter this panel."]}))
+        .mark_text(align="left", baseline="top", fontSize=16, color="#64748b")
+        .encode(text="note:N")
+        .properties(width=label_width + metric_width + sales_width + customers_width + 18, height=28)
+    )
+
+    panel = (
+        alt.vconcat(
+            note,
+            alt.hconcat(label_col, m_bar, s_bar, c_bar, spacing=6).resolve_scale(y="shared"),
+            spacing=6,
+        )
+    )
+    return _apply_chart_theme(panel)
+
 # -----------------------------
 # 4) Discount guardrail heatmap (strategy bins)
 # -----------------------------
@@ -705,7 +824,7 @@ def discount_guardrail(df_f: pd.DataFrame, top_n: int = 15, width: int = 820, he
             alt.Chart(pd.DataFrame({"message": ["No discount-bin data for current filters"]}))
             .mark_text(align="center", baseline="middle", fontSize=14, color="#334155")
             .encode(text="message:N")
-            .properties(width=width, height=min(height, 140), title="Discount Guardrail Framework")
+            .properties(width=width, height=min(height, 140))
         )
         return _apply_chart_theme(empty)
 
@@ -735,7 +854,7 @@ def discount_guardrail(df_f: pd.DataFrame, top_n: int = 15, width: int = 820, he
                 alt.Tooltip("margin_pct:Q", format=".2f", title="Profit Margin (%)"),
             ],
         )
-        .properties(width=width, height=height, title="Discount Guardrail Framework")
+        .properties(width=width, height=height)
     )
 
     return _apply_chart_theme(heat)
