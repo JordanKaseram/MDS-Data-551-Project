@@ -364,6 +364,19 @@ body {
   width: 100% !important;
 }
 
+#pricing-heatmap,
+#pricing-heatmap .dash-graph,
+#pricing-heatmap .js-plotly-plot,
+#pricing-heatmap .plot-container,
+#pricing-heatmap .svg-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.pricing-card .card-body {
+  padding: 4px 6px 6px;
+}
+
 /* Dash slider tweaks */
 .rc-slider-rail {
   background-color: #d7dfea;

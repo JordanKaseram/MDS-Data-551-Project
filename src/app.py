@@ -31,6 +31,7 @@ import pandas as pd
 import numpy as np
 import altair as alt
 import plotly.express as px
+import plotly.graph_objects as go
 
 import charts as ch
 from data import df
@@ -241,6 +242,15 @@ def _subcat_plotly(
                     line=dict(color="#ffffff", width=1.2 if is_active else 0.0),
                 )
             )
+    else:
+        # Explicitly clear any persisted client-side selection state.
+        for trace in fig.data:
+            trace.update(
+                selectedpoints=[],
+                selected=dict(marker=dict(opacity=1.0)),
+                unselected=dict(marker=dict(opacity=1.0)),
+                marker=dict(opacity=1.0, line=dict(color="#ffffff", width=0.0)),
+            )
 
     # Median lines for quadrant guidance
     x_med = float(g["freq_pct"].median()) if len(g) else 0
@@ -320,6 +330,192 @@ def _subcat_plotly(
     return fig
 
 
+def _discount_guardrail_plotly(d: pd.DataFrame, top_n: int = 12):
+    """Responsive Plotly heatmap for discount guardrails."""
+    bins = [0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.35, 1.00]
+    labels = ["0–5%", "5–10%", "10–15%", "15–20%", "20–25%", "25–35%", ">35%"]
+    boundary_ticks = {
+        "0–5%": "0",
+        "5–10%": "5",
+        "10–15%": "10",
+        "15–20%": "15",
+        "20–25%": "20",
+        "25–35%": "25",
+        ">35%": "35",
+    }
+    clamp = 40
+
+    data = d.copy()
+    data["discount"] = pd.to_numeric(data.get("discount"), errors="coerce")
+    data = data.dropna(subset=["sub_category", "order_id", "sales", "profit", "discount"])
+
+    if data.empty:
+        fig = go.Figure()
+        fig.update_layout(
+            template="plotly_white",
+            autosize=True,
+            margin=dict(l=110, r=40, t=14, b=48),
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            annotations=[
+                dict(
+                    text="No discount-bin data for current filters",
+                    x=0.5,
+                    y=0.5,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False,
+                    font=dict(size=14, color="#334155"),
+                )
+            ],
+        )
+        return fig
+
+    data["disc_bin"] = pd.cut(data["discount"], bins=bins, labels=labels, include_lowest=True)
+    data = data.dropna(subset=["disc_bin"])
+
+    disc = (
+        data.groupby(["sub_category", "disc_bin"], observed=True)
+        .agg(sales=("sales", "sum"), profit=("profit", "sum"), orders=("order_id", "nunique"))
+        .reset_index()
+    )
+    disc["margin_pct"] = np.where(disc["sales"] == 0, np.nan, disc["profit"] / disc["sales"] * 100.0)
+    disc = disc.replace([np.inf, -np.inf], np.nan).dropna(subset=["margin_pct", "disc_bin"])
+    disc = disc[(disc["orders"] >= 20) & (disc["sales"] >= 3000)].copy()
+
+    top_subcats = (
+        data.groupby("sub_category")["sales"].sum().sort_values(ascending=False).head(top_n).index.tolist()
+    )
+    disc_top = disc[disc["sub_category"].isin(top_subcats)].copy()
+
+    if disc_top.empty:
+        fig = go.Figure()
+        fig.update_layout(
+            template="plotly_white",
+            autosize=True,
+            margin=dict(l=110, r=40, t=14, b=48),
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            annotations=[
+                dict(
+                    text="No discount-bin data for current filters",
+                    x=0.5,
+                    y=0.5,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False,
+                    font=dict(size=14, color="#334155"),
+                )
+            ],
+        )
+        return fig
+
+    sens = disc_top[disc_top["disc_bin"].astype(str) == ">35%"][["sub_category", "margin_pct"]]
+    if len(sens):
+        row_order = sens.sort_values("margin_pct")["sub_category"].tolist()
+    else:
+        row_order = list(top_subcats)
+    for subcat in top_subcats:
+        if subcat not in row_order:
+            row_order.append(subcat)
+
+    disc_top["disc_bin"] = disc_top["disc_bin"].astype(str)
+    disc_top["margin_clamped"] = disc_top["margin_pct"].clip(-clamp, clamp)
+
+    pivot = disc_top.pivot_table(
+        index="sub_category",
+        columns="disc_bin",
+        values="margin_clamped",
+        aggfunc="mean",
+    )
+    y_order = [y for y in row_order if y in pivot.index]
+    x_order = [x for x in labels if x in pivot.columns]
+    pivot = pivot.reindex(index=y_order, columns=x_order)
+
+    margin_pivot = disc_top.pivot_table(
+        index="sub_category",
+        columns="disc_bin",
+        values="margin_pct",
+        aggfunc="mean",
+    ).reindex(index=y_order, columns=x_order)
+    orders_pivot = disc_top.pivot_table(
+        index="sub_category",
+        columns="disc_bin",
+        values="orders",
+        aggfunc="sum",
+    ).reindex(index=y_order, columns=x_order)
+    sales_pivot = disc_top.pivot_table(
+        index="sub_category",
+        columns="disc_bin",
+        values="sales",
+        aggfunc="sum",
+    ).reindex(index=y_order, columns=x_order)
+
+    custom = np.dstack(
+        [
+            np.where(np.isnan(orders_pivot.to_numpy(dtype=float)), np.nan, orders_pivot.to_numpy(dtype=float)),
+            np.where(np.isnan(sales_pivot.to_numpy(dtype=float)), np.nan, sales_pivot.to_numpy(dtype=float)),
+            np.where(np.isnan(margin_pivot.to_numpy(dtype=float)), np.nan, margin_pivot.to_numpy(dtype=float)),
+        ]
+    )
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=pivot.to_numpy(dtype=float),
+            x=x_order,
+            y=y_order,
+            zmin=-clamp,
+            zmax=clamp,
+            zmid=0,
+            colorscale="RdBu",
+            xgap=1,
+            ygap=1,
+            hoverongaps=False,
+            customdata=custom,
+            hovertemplate=(
+                "sub_category: %{y}<br>"
+                "disc_bin: %{x}<br>"
+                "Orders: %{customdata[0]:,.0f}<br>"
+                "Total Sales: %{customdata[1]:,.0f}<br>"
+                "Profit Margin (%): %{customdata[2]:.2f}<extra></extra>"
+            ),
+            colorbar=dict(
+                title=dict(text="Profit Margin (%)", side="top"),
+                thickness=12,
+                len=0.92,
+                y=0.5,
+                yanchor="middle",
+                tickfont=dict(size=10),
+            ),
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        autosize=True,
+        margin=dict(l=124, r=42, t=10, b=48),
+        font=dict(size=12, color="#334155"),
+    )
+    fig.update_xaxes(
+        title="Discount (%)",
+        tickmode="array",
+        tickvals=x_order,
+        ticktext=[boundary_ticks.get(x, x) for x in x_order],
+        tickangle=0,
+        tickfont=dict(size=13),
+        title_font=dict(size=15),
+        automargin=True,
+    )
+    fig.update_yaxes(
+        title="Subcategory",
+        tickfont=dict(size=14),
+        title_font=dict(size=15),
+        automargin=True,
+        autorange="reversed",
+    )
+    return fig
+
+
 def _extract_category(event_data: dict | None) -> str | None:
     """Read selected category from Plotly hover/click payload."""
     if not event_data or not isinstance(event_data, dict):
@@ -380,8 +576,21 @@ def _focus_pairs_from_store(focus_state: dict | None) -> list[tuple[str, str]]:
     return out
 
 
-def _focus_store_payload(pairs: list[tuple[str, str]]) -> dict:
-    return {"pairs": [{"category": c, "sub_category": s} for c, s in pairs]}
+def _focus_reset_seq_from_store(focus_state: dict | None) -> int:
+    if not isinstance(focus_state, dict):
+        return 0
+    seq = focus_state.get("reset_seq", 0)
+    try:
+        return int(seq)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _focus_store_payload(pairs: list[tuple[str, str]], reset_seq: int = 0) -> dict:
+    return {
+        "pairs": [{"category": c, "sub_category": s} for c, s in pairs],
+        "reset_seq": int(reset_seq),
+    }
 
 
 def _focus_label(selected_pairs, locked_pair, hovered_pair) -> str:
@@ -408,7 +617,7 @@ SEGMENTS = sorted(df["segment"].dropna().unique().tolist())
 # -----------------------------
 app.layout = html.Div(
     [
-        dcc.Store(id="focus-state", data=None),
+        dcc.Store(id="focus-state", data={"pairs": [], "reset_seq": 0}),
         html.Div(
             [
                 html.Div(
@@ -539,11 +748,16 @@ app.layout = html.Div(
                                     [
                                         html.Div("Pricing Strategy (Discount Guardrails)", className="card-header"),
                                         html.Div(
-                                            html.Iframe(id="pricing-frame", className="iframe", style={"height": "100%", "width": "100%"}),
+                                            dcc.Graph(
+                                                id="pricing-heatmap",
+                                                config={"displayModeBar": False, "responsive": True},
+                                                responsive=True,
+                                                style={"height": "100%", "width": "100%"},
+                                            ),
                                             className="card-body",
                                         ),
                                     ],
-                                    className="card",
+                                    className="card pricing-card",
                                 ),
                             ],
                             className="side-stack",
@@ -576,32 +790,59 @@ app.layout = html.Div(
 def update_focus_state(selectedData, clickData, reset_clicks, year_range, season, segments, focus_state):
     trigger = ctx.triggered_id
     triggered_props = set((ctx.triggered_prop_ids or {}).keys())
+    reset_seq = _focus_reset_seq_from_store(focus_state)
 
-    if trigger in {"reset-focus", "year-range", "season", "segment"}:
-        return None
+    if trigger == "reset-focus":
+        return _focus_store_payload([], reset_seq=reset_seq + 1)
+
+    if trigger in {"year-range", "season", "segment"}:
+        # Filter changes clear focus and any persisted view state.
+        return _focus_store_payload([], reset_seq=reset_seq + 1)
 
     if trigger == "subcat-graph":
-        selected_pairs = _extract_selected_pairs(selectedData)
-        if selected_pairs:
-            return _focus_store_payload(selected_pairs)
+        selected_triggered = "subcat-graph.selectedData" in triggered_props
+        click_triggered = "subcat-graph.clickData" in triggered_props
 
-        pair = _extract_pair(clickData)
-        if pair:
-            current = _focus_pairs_from_store(focus_state)
-            if (
-                len(current) == 1
-                and current[0][0] == pair[0]
-                and current[0][1] == pair[1]
-            ):
-                return None
-            return _focus_store_payload([pair])
+        # Click is authoritative when both clickData and selectedData fire together.
+        # This prevents stale selectedData from overriding a fresh click interaction.
+        if click_triggered:
+            pair = _extract_pair(clickData)
+            if pair:
+                current = _focus_pairs_from_store(focus_state)
+                if len(current) == 1 and current[0] == pair:
+                    return no_update
+                return _focus_store_payload([pair], reset_seq=reset_seq)
+            return no_update
 
-        # Plotly often emits an empty selectedData after figure refresh.
-        # Ignore that transient event to keep focus durable until explicit reset.
-        if "subcat-graph.selectedData" in triggered_props:
+        # Handle box/lasso multi-select when selectedData is the only trigger.
+        if selected_triggered:
+            selected_pairs = _extract_selected_pairs(selectedData)
+            if selected_pairs:
+                current = _focus_pairs_from_store(focus_state)
+                if current == selected_pairs:
+                    return no_update
+                return _focus_store_payload(selected_pairs, reset_seq=reset_seq)
+            # Ignore transient empty selectedData events.
             return no_update
 
     return no_update
+
+
+@app.callback(
+    Output("subcat-graph", "selectedData"),
+    Output("subcat-graph", "clickData"),
+    Output("subcat-graph", "hoverData"),
+    Output("subcat-graph", "relayoutData"),
+    Input("reset-focus", "n_clicks"),
+    Input("year-range", "value"),
+    Input("season", "value"),
+    Input("segment", "value"),
+    prevent_initial_call=True,
+)
+def clear_graph_interaction_state(reset_clicks, year_range, season, segments):
+    # Clear transient interaction payloads on explicit reset/filter changes.
+    # This prevents stale click/selection payloads from being replayed.
+    return None, None, None, None
 
 
 @app.callback(
@@ -616,7 +857,7 @@ def update_focus_state(selectedData, clickData, reset_clicks, year_range, season
     Output("focus-mode-text", "children"),
     Output("subcat-graph", "figure"),
     Output("top-products-frame", "srcDoc"),
-    Output("pricing-frame", "srcDoc"),
+    Output("pricing-heatmap", "figure"),
     Input("year-range", "value"),
     Input("season", "value"),
     Input("segment", "value"),
@@ -689,11 +930,13 @@ def update_dashboard(year_range, season, segments, focus_state):
         for cat, subcat in g_sub[["category", "sub_category"]].dropna().itertuples(index=False, name=None)
     }
     selected_pairs = [p for p in _focus_pairs_from_store(focus_state) if p in valid_pairs]
+    reset_seq = _focus_reset_seq_from_store(focus_state)
 
     # Focus priority: durable selected pairs from store.
     selected_category = None
     locked_pair = selected_pairs[0] if len(selected_pairs) == 1 else None
-    focus_key = "|".join([f"{c}::{s}" for c, s in selected_pairs]) if selected_pairs else "all"
+    selected_key = "|".join([f"{c}::{s}" for c, s in selected_pairs]) if selected_pairs else "all"
+    focus_key = f"{reset_seq}|{selected_key}"
 
     subcat_fig = _subcat_plotly(
         g_sub,
@@ -730,7 +973,7 @@ def update_dashboard(year_range, season, segments, focus_state):
         customers_width=85,
         panel_height=210,
     )
-    pricing = ch.discount_guardrail(d_focus, top_n=12, width=430, height=210)
+    pricing = _discount_guardrail_plotly(d_focus, top_n=12)
 
     year_text = f"{y0} - {y1}"
     focus_text = _focus_label(selected_pairs, locked_pair, None)
@@ -747,7 +990,7 @@ def update_dashboard(year_range, season, segments, focus_state):
         focus_text,
         subcat_fig,
         _fix_altair_html(top_products.to_html(embed_options={"actions": False})),
-        _fix_altair_html(pricing.to_html(embed_options={"actions": False})),
+        pricing,
     )
 
 
