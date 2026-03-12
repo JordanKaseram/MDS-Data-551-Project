@@ -707,10 +707,9 @@ def top_products_panel_present(
 
     top = prod.sort_values("margin_pct", ascending=False).head(top_n).copy()
     top["label"] = top["sub_category"] + " | " + top["product_name"]
-    top["label_short"] = np.where(
-        top["label"].str.len() > 40,
-        top["label"].str.slice(0, 40) + "...",
-        top["label"],
+    max_label_chars = 36
+    top["label_short"] = top["label"].map(
+        lambda s: s if len(s) <= max_label_chars else s[: max_label_chars - 3].rstrip() + "..."
     )
     top["margin_label"] = top["margin_pct"].map(lambda v: f"{v:.1f}%")
     top["sales_label"] = top["sales"].map(lambda v: f"${v:,.0f}")
@@ -725,7 +724,7 @@ def top_products_panel_present(
 
     label_col = (
         alt.Chart(top)
-        .mark_text(align="left", baseline="middle", color="#334155", dx=0, fontSize=15, fontWeight="bold")
+        .mark_text(align="left", baseline="middle", color="#334155", dx=0, fontSize=11, fontWeight="bold")
         .encode(
             y=y_shared,
             x=alt.value(0),
@@ -744,7 +743,7 @@ def top_products_panel_present(
                 x=alt.X(
                     f"{value_field}:Q",
                     title=title_text,
-                    axis=alt.Axis(grid=True, gridColor="#e2e8f0", labelFontSize=14, titleFontSize=15),
+                    axis=alt.Axis(grid=True, gridColor="#e2e8f0", labelFontSize=10, titleFontSize=10),
                 ),
                 tooltip=[
                     alt.Tooltip("label:N", title="Product"),
@@ -761,7 +760,7 @@ def top_products_panel_present(
         )
         labels = (
             alt.Chart(top)
-            .mark_text(align="left", baseline="middle", dx=4, color="#1e293b", fontSize=13, fontWeight="bold")
+            .mark_text(align="left", baseline="middle", dx=2, color="#1e293b", fontSize=9, fontWeight="bold")
             .encode(
                 y=y_shared,
                 x=alt.X(f"{value_field}:Q"),
@@ -776,9 +775,9 @@ def top_products_panel_present(
 
     note = (
         alt.Chart(pd.DataFrame({"note": ["Top 10 products. Click or select bubbles above to filter this panel."]}))
-        .mark_text(align="left", baseline="top", fontSize=16, color="#64748b")
+        .mark_text(align="left", baseline="top", fontSize=10, color="#64748b")
         .encode(text="note:N")
-        .properties(width=label_width + metric_width + sales_width + customers_width + 18, height=28)
+        .properties(width=label_width + metric_width + sales_width + customers_width + 18, height=16)
     )
 
     panel = (
@@ -837,14 +836,25 @@ def discount_guardrail(df_f: pd.DataFrame, top_n: int = 15, width: int = 820, he
 
     heat = (
         alt.Chart(disc_top)
-        .mark_rect()
+        .mark_rect(stroke="#ffffff", strokeWidth=0.35)
         .encode(
-            x=alt.X("disc_bin:N", sort=labels, title="Discount Bucket (%)"),
-            y=alt.Y("sub_category:N", sort=row_order, title="Subcategory"),
+            x=alt.X(
+                "disc_bin:N",
+                sort=labels,
+                title="Discount Bucket (%)",
+                axis=alt.Axis(labelFontSize=9, titleFontSize=10, labelLimit=80),
+            ),
+            y=alt.Y(
+                "sub_category:N",
+                sort=row_order,
+                title="Subcategory",
+                axis=alt.Axis(labelFontSize=9, titleFontSize=10, labelLimit=120),
+            ),
             color=alt.Color(
                 "margin_clamped:Q",
                 title="Profit Margin (%)",
                 scale=alt.Scale(scheme="redblue", domain=[-CLAMP, CLAMP], domainMid=0),
+                legend=alt.Legend(orient="right", gradientLength=90, titleFontSize=10, labelFontSize=9),
             ),
             tooltip=[
                 "sub_category:N",

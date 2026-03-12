@@ -4,7 +4,7 @@ import sys
 
 
 def _fix_altair_html(html: str) -> str:
-    """Inject CSS to remove margins/scrollbars inside iframe."""
+    """Inject CSS to control margins/scrollbars inside iframe."""
     if not html:
         return html
     css = (
@@ -26,7 +26,7 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
-from dash import Dash, html, dcc, Input, Output, State, ctx
+from dash import Dash, html, dcc, Input, Output, State, ctx, no_update
 import pandas as pd
 import numpy as np
 import altair as alt
@@ -184,14 +184,15 @@ def _subcat_plotly(
     selected_pairs: list[tuple[str, str]] | None = None,
     active_pair: tuple[str, str] | None = None,
     locked_pair: tuple[str, str] | None = None,
+    uirevision_key: str = "subcat-selection",
 ):
     """Plotly bubble chart that can drive Dash interactions."""
     if g is None or g.empty:
         fig = px.scatter(pd.DataFrame({"x": [], "y": []}), x="x", y="y")
         fig.update_layout(
             template="plotly_white",
-            margin=dict(l=10, r=10, t=40, b=10),
-            height=460,
+            margin=dict(l=48, r=24, t=28, b=48),
+            autosize=True,
         )
         return fig
 
@@ -256,33 +257,66 @@ def _subcat_plotly(
     fig.add_annotation(x=x0 + pad_x, y=y1 - pad_y,
                        text="Invest (High margin / Low frequency)",
                        showarrow=False, xanchor="left", yanchor="top",
-                       font=dict(size=14, color="#334155"))
+                       font=dict(size=12, color="#334155"))
     fig.add_annotation(x=x1 - pad_x, y=y1 - pad_y,
                        text="Grow (High margin / High frequency)",
                        showarrow=False, xanchor="right", yanchor="top",
-                       font=dict(size=14, color="#334155"))
+                       font=dict(size=12, color="#334155"))
     fig.add_annotation(x=x0 + pad_x, y=y0 + pad_y,
                        text="Fix/Exit (Low margin / Low frequency)",
                        showarrow=False, xanchor="left", yanchor="bottom",
-                       font=dict(size=14, color="#334155"))
+                       font=dict(size=12, color="#334155"))
     fig.add_annotation(x=x1 - pad_x, y=y0 + pad_y,
                        text="Promote (Low margin / High frequency)",
                        showarrow=False, xanchor="right", yanchor="bottom",
-                       font=dict(size=14, color="#334155"))
+                       font=dict(size=12, color="#334155"))
 
     fig.update_layout(
         template="plotly_white",
-        margin=dict(l=20, r=20, t=18, b=24),
-        height=520,
+        margin=dict(l=84, r=28, t=58, b=74),
+        autosize=True,
         legend_title_text="Category",
         clickmode="event+select",
         dragmode="select",
         hovermode="closest",
-        uirevision="subcat-selection",
-        legend=dict(font=dict(size=15), title_font=dict(size=16)),
+        uirevision=uirevision_key,
+        font=dict(size=12),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0.0,
+            font=dict(size=12),
+            title_font=dict(size=13),
+        ),
     )
-    fig.update_xaxes(title="Purchase Frequency (% of Orders)", tickfont=dict(size=16), title_font=dict(size=18))
-    fig.update_yaxes(title="Profit Margin (%)", tickfont=dict(size=16), title_font=dict(size=18))
+    fig.update_xaxes(
+        title="Purchase Frequency (% of Orders)",
+        tickfont=dict(size=12),
+        title_font=dict(size=14),
+        automargin=True,
+        title_standoff=10,
+    )
+    fig.update_yaxes(
+        title="Profit Margin (%)",
+        tickfont=dict(size=12),
+        title_font=dict(size=14),
+        automargin=True,
+        title_standoff=10,
+    )
+
+    focus_pairs = selected_pair_set or active_pair_set or locked_pair_set
+    if focus_pairs:
+        focus_df = g[g.apply(lambda r: (str(r["category"]), str(r["sub_category"])) in focus_pairs, axis=1)]
+        if not focus_df.empty:
+            x_lo, x_hi = float(focus_df["freq_pct"].min()), float(focus_df["freq_pct"].max())
+            y_lo, y_hi = float(focus_df["margin_pct"].min()), float(focus_df["margin_pct"].max())
+            pad_x = max((x_hi - x_lo) * 0.35, 0.9)
+            pad_y = max((y_hi - y_lo) * 0.35, 2.8)
+            fig.update_xaxes(range=[x_lo - pad_x, x_hi + pad_x], autorange=False)
+            fig.update_yaxes(range=[y_lo - pad_y, y_hi + pad_y], autorange=False)
+
     return fig
 
 
@@ -329,6 +363,27 @@ def _extract_pair(event_data: dict | None) -> tuple[str, str] | None:
     return pairs[0] if pairs else None
 
 
+def _focus_pairs_from_store(focus_state: dict | None) -> list[tuple[str, str]]:
+    if not isinstance(focus_state, dict):
+        return []
+    pairs = focus_state.get("pairs", [])
+    if not isinstance(pairs, list):
+        return []
+
+    out: list[tuple[str, str]] = []
+    for item in pairs:
+        if isinstance(item, dict):
+            cat = item.get("category")
+            subcat = item.get("sub_category")
+            if cat is not None and subcat is not None:
+                out.append((str(cat), str(subcat)))
+    return out
+
+
+def _focus_store_payload(pairs: list[tuple[str, str]]) -> dict:
+    return {"pairs": [{"category": c, "sub_category": s} for c, s in pairs]}
+
+
 def _focus_label(selected_pairs, locked_pair, hovered_pair) -> str:
     if selected_pairs:
         return f"{len(selected_pairs)} bubble(s) selected"
@@ -353,80 +408,91 @@ SEGMENTS = sorted(df["segment"].dropna().unique().tolist())
 # -----------------------------
 app.layout = html.Div(
     [
+        dcc.Store(id="focus-state", data=None),
         html.Div(
             [
-                dcc.Store(id="locked-focus", data=None),
-                html.Div("Profit Optimization Strategy for Retail Campaigns", className="title"),
                 html.Div(
-                    "Executive view: identify subcategory opportunities, bundle tactics, and discount guardrails",
-                    className="subtitle",
+                    [
+                        html.Div("Profit Optimization Strategy for Retail Campaigns", className="title"),
+                        html.Div(
+                            "Executive view: identify subcategory opportunities, bundle tactics, and discount guardrails",
+                            className="subtitle",
+                        ),
+                    ],
+                    className="screen-region header-region",
                 ),
 
                 # Filters (not dropdowns)
                 html.Div(
-                    [
-                        html.Div(
-                            [
-                                html.Div("Year range", className="filter-label"),
-                                dcc.RangeSlider(
-                                    id="year-range",
-                                    min=YEAR_MIN,
-                                    max=YEAR_MAX,
-                                    value=[YEAR_MIN, YEAR_MAX],
-                                    marks=YEAR_MARKS,
-                                    step=1,
-                                    allowCross=False,
-                                ),
-                                html.Div(id="year-range-text", className="filter-hint"),
-                            ],
-                            className="card filter-card",
-                        ),
-                        html.Div(
-                            [
-                                html.Div("Season", className="filter-label"),
-                                dcc.RadioItems(
-                                    id="season",
-                                    options=[{"label": s, "value": s} for s in SEASONS],
-                                    value="All",
-                                    className="pill-group",
-                                    inline=True,
-                                ),
-                            ],
-                            className="card filter-card",
-                        ),
-                        html.Div(
-                            [
-                                html.Div("Customer segment", className="filter-label"),
-                                dcc.Checklist(
-                                    id="segment",
-                                    options=[{"label": s, "value": s} for s in SEGMENTS],
-                                    value=SEGMENTS,
-                                    className="pill-group",
-                                    inline=True,
-                                ),
-                                html.Div("Tip: select multiple segments to compare", className="filter-hint"),
-                            ],
-                            className="card filter-card",
-                        ),
-                    ],
-                    className="filters-row",
+                    html.Div(
+                        [
+                            html.Div(
+                                [
+                                    html.Div("Year range", className="filter-label"),
+                                    dcc.RangeSlider(
+                                        id="year-range",
+                                        min=YEAR_MIN,
+                                        max=YEAR_MAX,
+                                        value=[YEAR_MIN, YEAR_MAX],
+                                        marks=YEAR_MARKS,
+                                        step=1,
+                                        allowCross=False,
+                                    ),
+                                    html.Div(id="year-range-text", className="filter-hint"),
+                                ],
+                                className="card filter-card",
+                            ),
+                            html.Div(
+                                [
+                                    html.Div("Season", className="filter-label"),
+                                    dcc.RadioItems(
+                                        id="season",
+                                        options=[{"label": s, "value": s} for s in SEASONS],
+                                        value="All",
+                                        className="pill-group",
+                                        inline=True,
+                                    ),
+                                ],
+                                className="card filter-card",
+                            ),
+                            html.Div(
+                                [
+                                    html.Div("Customer segment", className="filter-label"),
+                                    dcc.Checklist(
+                                        id="segment",
+                                        options=[{"label": s, "value": s} for s in SEGMENTS],
+                                        value=SEGMENTS,
+                                        className="pill-group",
+                                        inline=True,
+                                    ),
+                                    html.Div("Tip: select multiple segments to compare", className="filter-hint"),
+                                ],
+                                className="card filter-card",
+                            ),
+                        ],
+                        className="filters-row",
+                    ),
+                    className="screen-region controls-region",
                 ),
 
                 # KPI row (cards injected from callback)
                 html.Div(
-                    [
-                        html.Div(id="kpi-customers"),
-                        html.Div(id="kpi-revenue"),
-                        html.Div(id="kpi-profit"),
-                        html.Div(id="kpi-margin"),
-                        html.Div(id="kpi-discount"),
-                        html.Div(id="kpi-frequency"),
-                        html.Div(id="kpi-avg-products"),
-                    ],
-                    className="kpi-row",
+                    html.Div(
+                        [
+                            html.Div(id="kpi-customers"),
+                            html.Div(id="kpi-revenue"),
+                            html.Div(id="kpi-profit"),
+                            html.Div(id="kpi-margin"),
+                            html.Div(id="kpi-discount"),
+                            html.Div(id="kpi-frequency"),
+                            html.Div(id="kpi-avg-products"),
+                        ],
+                        className="kpi-row",
+                    ),
+                    className="screen-region kpi-region",
                 ),
 
-                # Main row: bubble chart
+                # Main analysis area: left bubble chart + right stacked panels
                 html.Div(
                     [
                         html.Div(
@@ -449,47 +515,47 @@ app.layout = html.Div(
                                         id="subcat-graph",
                                         config={"displayModeBar": False},
                                         clear_on_unhover=True,
-                                        style={"height": "560px"},
+                                        responsive=True,
+                                        style={"height": "100%", "width": "100%"},
                                     ),
                                     className="card-body",
                                 ),
                             ],
-                            className="card",
-                        ),
-                    ],
-                    className="row row-tall row-single",
-                ),
-
-                # Bottom row: products + pricing
-                html.Div(
-                    [
-                        html.Div(
-                            [
-                                html.Div("Breakdown: Top 10 Products", className="card-header"),
-                                html.Div(
-                                    html.Iframe(id="top-products-frame", className="iframe", style={"height": "500px"}),
-                                    className="card-body",
-                                ),
-                            ],
-                            className="card",
+                            className="card main-chart-card",
                         ),
                         html.Div(
                             [
-                                html.Div("Pricing Strategy (Discount Guardrails)", className="card-header"),
                                 html.Div(
-                                    html.Iframe(id="pricing-frame", className="iframe", style={"height": "500px"}),
-                                    className="card-body",
+                                    [
+                                        html.Div("Breakdown: Top 10 Products", className="card-header"),
+                                        html.Div(
+                                            html.Iframe(id="top-products-frame", className="iframe", style={"height": "100%", "width": "100%"}),
+                                            className="card-body",
+                                        ),
+                                    ],
+                                    className="card",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Div("Pricing Strategy (Discount Guardrails)", className="card-header"),
+                                        html.Div(
+                                            html.Iframe(id="pricing-frame", className="iframe", style={"height": "100%", "width": "100%"}),
+                                            className="card-body",
+                                        ),
+                                    ],
+                                    className="card",
                                 ),
                             ],
-                            className="card",
+                            className="side-stack",
                         ),
                     ],
-                    className="row",
+                    className="screen-region analysis-region",
                 ),
             ],
-            className="container",
-        )
-    ]
+            className="container dashboard-grid",
+        ),
+    ],
+    className="app-shell",
 )
 
 
@@ -497,33 +563,45 @@ app.layout = html.Div(
 # Callback
 # -----------------------------
 @app.callback(
-    Output("locked-focus", "data"),
+    Output("focus-state", "data"),
+    Input("subcat-graph", "selectedData"),
     Input("subcat-graph", "clickData"),
     Input("reset-focus", "n_clicks"),
     Input("year-range", "value"),
     Input("season", "value"),
     Input("segment", "value"),
-    State("locked-focus", "data"),
+    State("focus-state", "data"),
     prevent_initial_call=True,
 )
-def update_locked_focus(clickData, reset_clicks, year_range, season, segments, locked_focus):
+def update_focus_state(selectedData, clickData, reset_clicks, year_range, season, segments, focus_state):
     trigger = ctx.triggered_id
+    triggered_props = set((ctx.triggered_prop_ids or {}).keys())
 
     if trigger in {"reset-focus", "year-range", "season", "segment"}:
         return None
 
     if trigger == "subcat-graph":
+        selected_pairs = _extract_selected_pairs(selectedData)
+        if selected_pairs:
+            return _focus_store_payload(selected_pairs)
+
         pair = _extract_pair(clickData)
         if pair:
+            current = _focus_pairs_from_store(focus_state)
             if (
-                isinstance(locked_focus, dict)
-                and str(locked_focus.get("category")) == pair[0]
-                and str(locked_focus.get("sub_category")) == pair[1]
+                len(current) == 1
+                and current[0][0] == pair[0]
+                and current[0][1] == pair[1]
             ):
                 return None
-            return {"category": pair[0], "sub_category": pair[1]}
+            return _focus_store_payload([pair])
 
-    return locked_focus
+        # Plotly often emits an empty selectedData after figure refresh.
+        # Ignore that transient event to keep focus durable until explicit reset.
+        if "subcat-graph.selectedData" in triggered_props:
+            return no_update
+
+    return no_update
 
 
 @app.callback(
@@ -542,10 +620,9 @@ def update_locked_focus(clickData, reset_clicks, year_range, season, segments, l
     Input("year-range", "value"),
     Input("season", "value"),
     Input("segment", "value"),
-    Input("subcat-graph", "selectedData"),
-    Input("locked-focus", "data"),
+    Input("focus-state", "data"),
 )
-def update_dashboard(year_range, season, segments, selectedData, locked_focus):
+def update_dashboard(year_range, season, segments, focus_state):
     d = df.copy()
 
     # Year range filter
@@ -611,19 +688,12 @@ def update_dashboard(year_range, season, segments, selectedData, locked_focus):
         (str(cat), str(subcat))
         for cat, subcat in g_sub[["category", "sub_category"]].dropna().itertuples(index=False, name=None)
     }
-    selected_pairs = [p for p in _extract_selected_pairs(selectedData) if p in valid_pairs]
+    selected_pairs = [p for p in _focus_pairs_from_store(focus_state) if p in valid_pairs]
 
-    # Bubble chart interaction priority:
-    # 1) selected bubbles, 2) locked click focus, 3) default all.
+    # Focus priority: durable selected pairs from store.
     selected_category = None
-    locked_pair = None
-    if isinstance(locked_focus, dict):
-        cat = locked_focus.get("category")
-        subcat = locked_focus.get("sub_category")
-        if cat is not None and subcat is not None:
-            candidate = (str(cat), str(subcat))
-            if candidate in valid_pairs:
-                locked_pair = candidate
+    locked_pair = selected_pairs[0] if len(selected_pairs) == 1 else None
+    focus_key = "|".join([f"{c}::{s}" for c, s in selected_pairs]) if selected_pairs else "all"
 
     subcat_fig = _subcat_plotly(
         g_sub,
@@ -631,6 +701,7 @@ def update_dashboard(year_range, season, segments, selectedData, locked_focus):
         selected_pairs=selected_pairs,
         active_pair=None,
         locked_pair=locked_pair,
+        uirevision_key=focus_key,
     )
 
     # Focus dataset for dependent charts
@@ -653,15 +724,15 @@ def update_dashboard(year_range, season, segments, selectedData, locked_focus):
     top_products = ch.top_products_panel_present(
         d_focus,
         top_n=10,
-        label_width=210,
-        metric_width=145,
-        sales_width=200,
-        customers_width=145,
-        panel_height=460,
+        label_width=165,
+        metric_width=90,
+        sales_width=110,
+        customers_width=85,
+        panel_height=210,
     )
-    pricing = ch.discount_guardrail(d_focus, top_n=12, width=660, height=500)
+    pricing = ch.discount_guardrail(d_focus, top_n=12, width=430, height=210)
 
-    year_text = f"{y0} โ€“ {y1}"
+    year_text = f"{y0} - {y1}"
     focus_text = _focus_label(selected_pairs, locked_pair, None)
 
     return (
@@ -682,6 +753,3 @@ def update_dashboard(year_range, season, segments, selectedData, locked_focus):
 
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
