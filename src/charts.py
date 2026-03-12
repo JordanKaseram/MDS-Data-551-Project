@@ -842,13 +842,31 @@ def discount_guardrail(df_f: pd.DataFrame, top_n: int = 15, width: int = 820, he
                 "disc_bin:N",
                 sort=labels,
                 title="Discount Bucket (%)",
-                axis=alt.Axis(labelFontSize=9, titleFontSize=10, labelLimit=80),
+                axis=alt.Axis(
+                    labelAngle=0,
+                    labelAlign="center",
+                    labelBaseline="top",
+                    labelPadding=6,
+                    labelOverlap=False,
+                    labelFontSize=13,
+                    labelFontWeight="bold",
+                    titleFontSize=13,
+                    titleFontWeight="bold",
+                    labelLimit=100,
+                ),
             ),
             y=alt.Y(
                 "sub_category:N",
                 sort=row_order,
                 title="Subcategory",
-                axis=alt.Axis(labelFontSize=9, titleFontSize=10, labelLimit=120),
+                axis=alt.Axis(
+                    labelFontSize=14,
+                    labelFontWeight="bold",
+                    titleFontSize=13,
+                    titleFontWeight="bold",
+                    labelLimit=180,
+                    labelPadding=4,
+                ),
             ),
             color=alt.Color(
                 "margin_clamped:Q",
@@ -864,7 +882,11 @@ def discount_guardrail(df_f: pd.DataFrame, top_n: int = 15, width: int = 820, he
                 alt.Tooltip("margin_pct:Q", format=".2f", title="Profit Margin (%)"),
             ],
         )
-        .properties(width=width, height=height)
+        .properties(
+            width=width,
+            height=height,
+            padding={"left": 94, "right": 36, "top": 8, "bottom": 38},
+        )
     )
 
     return _apply_chart_theme(heat)
