@@ -307,6 +307,7 @@ def _subcat_plotly(
         title_font=dict(size=14),
         automargin=True,
         title_standoff=10,
+        showgrid=True,
     )
     fig.update_yaxes(
         title="Profit Margin (%)",
@@ -314,6 +315,7 @@ def _subcat_plotly(
         title_font=dict(size=14),
         automargin=True,
         title_standoff=10,
+        showgrid=True,
     )
 
     focus_pairs = selected_pair_set or active_pair_set or locked_pair_set
@@ -505,6 +507,8 @@ def _discount_guardrail_plotly(d: pd.DataFrame, top_n: int = 12):
         tickfont=dict(size=13),
         title_font=dict(size=15),
         automargin=True,
+        showgrid=False,
+        zeroline=False,
     )
     fig.update_yaxes(
         title="Subcategory",
@@ -512,6 +516,8 @@ def _discount_guardrail_plotly(d: pd.DataFrame, top_n: int = 12):
         title_font=dict(size=15),
         automargin=True,
         autorange="reversed",
+        showgrid=False,
+        zeroline=False,
     )
     return fig
 
@@ -623,10 +629,6 @@ app.layout = html.Div(
                 html.Div(
                     [
                         html.Div("Profit Optimization Strategy for Retail Campaigns", className="title"),
-                        html.Div(
-                            "Executive view: identify subcategory opportunities, bundle tactics, and discount guardrails",
-                            className="subtitle",
-                        ),
                     ],
                     className="screen-region header-region",
                 ),
