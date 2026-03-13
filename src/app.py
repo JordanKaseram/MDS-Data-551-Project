@@ -39,7 +39,7 @@ from data import df
 alt.data_transformers.disable_max_rows()
 alt.renderers.enable("html")
 
-app = Dash(__name__)
+app = Dash(__name__, title="Profit Optimization Strategy for Retail Campaigns")
 server = app.server
 
 # allow callbacks to reference components that may be swapped later
