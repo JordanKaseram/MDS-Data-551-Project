@@ -1,51 +1,59 @@
-# Retail Analytics Dashboard
+# Profit Optimization Dashboard for Retail Campaigns
 
-An interactive dashboard built with Dash + Altair to help retail teams answer a core question:
-how do we grow revenue without sacrificing margin?
-
-The app combines trend monitoring, product-level profitability, and basket/pricing intelligence in one place.
+Interactive retail decision dashboard built with Dash, Plotly, and Altair.
+It helps teams balance growth and profitability by linking subcategory opportunity, product performance, and discount guardrails in one screen.
 
 ## Live App
-Deployed dashboard:  
 https://mds-data-551-project-1.onrender.com/
 
-## Why This Project
-Retail promo decisions are often made with partial context: one team optimizes volume, another watches margin, and basket effects are reviewed separately. That fragmentation can lead to underperforming campaigns.
+## What The Dashboard Does
+The app supports promo and pricing decisions by showing:
+- KPI trends for customers, revenue, profit, margin, discount, frequency, and average products per transaction
+- Subcategory opportunity positioning (frequency vs. margin) to find where to invest, grow, promote, or fix
+- Product-level breakdown of the top 10 items by profitability context
+- Discount guardrail heatmap to see how discount buckets relate to margin by subcategory
 
-This project provides a single decision surface for:
-- Profit-aware trend analysis
-- Product performance diagnostics
-- Cross-sell and discount guardrails
+## How To Use It
+### 1) Set global filters
+Use the control row to filter by:
+- Year range (slider)
+- Season (All/Winter/Spring/Summer/Fall)
+- Customer segment (multi-select)
 
-## What Users Can Do
-At a high level, users can:
-- Filter the dashboard by year, month, and country
-- Track revenue/profit/margin trends
-- Identify top profit-driving products
-- Explore co-purchase patterns and bundle opportunities
-- Evaluate discount ranges against margin outcomes
+All charts and KPIs update from these filters.
 
-## Dashboard Sections
-### Section 1: Trends & Breakdown
-- KPI context for topline performance
-- Time-based charts for sales, profit, and margin
-- Category-level sales interaction that filters section charts
+### 2) Read KPI cards
+The KPI row summarizes current performance for the active filters.
+Each card includes a small sparkline and a delta vs. the previous period.
 
-### Section 2: Product Performance
-- Product-performance KPI (`Hero Profit`)
-- Top products by total profit
-- Product panel with profit margin, sales, and customer reach
+### 3) Use Subcategory Opportunity interactions
+The bubble chart is the main interaction driver.
+- Hover: shows category, subcategory, sales, frequency %, and margin %
+- Click a bubble: focuses on that subcategory and filters the bottom panels
+- Box/lasso select: focuses on multiple bubbles/subcategories
+- Reset focus: clears selection and returns all panels to the full filtered view
 
-### Section 3: Basket & Pricing Intelligence
-- Basket KPIs (`Average Basket Spend`, `Attach Rate`, `Avg Co-products`)
-- Subcategory discovery bubble (frequency vs margin)
-- Top co-purchases
-- Bundle table (support/confidence/lift)
-- Discount guardrail heatmap
+### 4) Inspect Breakdown: Top 10 Products
+This panel reflects the active focus state.
+- Shows profit margin %, total sales, and customer count for top products
+- Hover reveals full product labels/metrics where labels are truncated
+
+### 5) Inspect Pricing Strategy (Discount Guardrails)
+This heatmap also respects the active focus state.
+- X-axis: discount boundaries (0, 5, 10, 15, 20, 25, 35)
+- Y-axis: subcategories
+- Color: profit margin (%) from negative (red) to positive (blue)
+- Hover: subcategory, discount bucket, orders, total sales, and profit margin
+
+## Interaction Model
+- Selection is durable: once focused, state remains active until you reset focus or change global filters.
+- Reset focus clears active subcategory selection and restores the default (unfocused) dashboard state.
+- Hover interactions are informational and do not override an active focus state.
 
 ## Tech Stack
 - Python
 - Dash
+- Plotly
 - Altair
 - Pandas
 - NumPy
@@ -59,17 +67,8 @@ python -m pip install -r requirements.txt
 python src/app.py
 ```
 
-The app reads data from:
+Data source:
 `data/raw/SuperStoreOrders.csv`
-
-
-## Help Wanted
-Areas where contributions would be especially useful:
-- Accessibility improvements (contrast, keyboard navigation, labels)
-- Automated tests for data transforms and callback logic
-- Mobile/responsive layout improvements
-- Faster rendering for larger datasets
-- Better onboarding docs and a short dashboard demo GIF
 
 ## Project Structure
 ```text
@@ -77,6 +76,7 @@ project/
 ├── data/
 │   ├── processed/
 │   └── raw/
+├── images/
 ├── src/
 │   ├── app.py
 │   ├── charts.py
@@ -91,6 +91,4 @@ project/
 ```
 
 ## Preview
-![Dashboard Mockup](images/dashboard_mockup.jpg)
-
-**Design Note:** The dashboard mockup shown below was generated using generative AI to illustrate the intended user experience and layout. The final implemented dashboard may differ in appearance and functionality as development progresses.
+![Dashboard Preview](images/dashboard_preview.jpeg)
