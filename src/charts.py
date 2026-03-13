@@ -724,7 +724,7 @@ def top_products_panel_present(
 
     label_col = (
         alt.Chart(top)
-        .mark_text(align="left", baseline="middle", color="#334155", dx=0, fontSize=11, fontWeight="bold")
+        .mark_text(align="left", baseline="middle", color="#334155", dx=0, fontSize=13, fontWeight="bold")
         .encode(
             y=y_shared,
             x=alt.value(0),
@@ -743,7 +743,7 @@ def top_products_panel_present(
                 x=alt.X(
                     f"{value_field}:Q",
                     title=title_text,
-                    axis=alt.Axis(grid=True, gridColor="#e2e8f0", labelFontSize=10, titleFontSize=10),
+                    axis=alt.Axis(grid=True, gridColor="#e2e8f0", labelFontSize=12, titleFontSize=12),
                 ),
                 tooltip=[
                     alt.Tooltip("label:N", title="Product"),
@@ -760,7 +760,7 @@ def top_products_panel_present(
         )
         labels = (
             alt.Chart(top)
-            .mark_text(align="left", baseline="middle", dx=2, color="#1e293b", fontSize=9, fontWeight="bold")
+            .mark_text(align="left", baseline="middle", dx=2, color="#1e293b", fontSize=11, fontWeight="bold")
             .encode(
                 y=y_shared,
                 x=alt.X(f"{value_field}:Q"),
@@ -774,10 +774,10 @@ def top_products_panel_present(
     c_bar = _metric_bar("customers", "customers_label", "Customers", customers_width, "#d97706")
 
     note = (
-        alt.Chart(pd.DataFrame({"note": ["Top 10 products. Click or select bubbles above to filter this panel."]}))
-        .mark_text(align="left", baseline="top", fontSize=10, color="#64748b")
+        alt.Chart(pd.DataFrame({"note": ["Top 10 products. Click or select bubbles to the left to filter this panel."]}))
+        .mark_text(align="left", baseline="top", fontSize=12, color="#64748b")
         .encode(text="note:N")
-        .properties(width=label_width + metric_width + sales_width + customers_width + 18, height=16)
+        .properties(width=label_width + metric_width + sales_width + customers_width + 18, height=20)
     )
 
     panel = (
