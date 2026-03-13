@@ -91,4 +91,4 @@ project/
 ```
 
 ## Preview
-![Dashboard Preview](images/dashboard_preview.jpeg)
+![Dashboard Preview](images/dashboard_preview.png)
